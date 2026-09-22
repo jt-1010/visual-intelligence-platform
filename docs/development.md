@@ -49,7 +49,8 @@ To start from a clean menu: delete `.pglite/` and run `npm run db:seed`.
 | `ollama` | our QLoRA Qwen2.5-3B | the fine-tuned result, and offline demos |
 
 Both must pass the same fixture suite. That comparison is the benchmark
-chapter, so keep them interchangeable.
+chapter, so keep them interchangeable. Run it with
+`npm run benchmark:agent` (see below).
 
 ## Checks
 
@@ -58,6 +59,23 @@ cd web && npm run check      # feature-spec drift, types, lint
 cd web && npm test           # ordering fixture suite (no LLM needed)
 cd services/ml && ./.venv/Scripts/python.exe -m pytest tests/ -q
 ```
+
+## Agent comparison benchmark
+
+Same ordering scenarios through three policies: **rules** (keyword floor),
+**ollama** (local Qwen), **gateway** (hosted frontier). Scores cart match,
+price integrity (no invented `$` amounts), and latency.
+
+```bash
+cd web
+cp .env.example .env.local   # once; add AI_GATEWAY_API_KEY if using gateway
+npm run benchmark:agent                              # all backends (skips missing ones)
+npm run benchmark:agent -- --backends=rules          # floor only, always works
+npm run benchmark:agent -- --backends=rules,ollama   # after: ollama pull qwen2.5:3b-instruct
+```
+
+This is the GenAI scoreboard: how far local/fine-tuned Qwen sits behind the
+hosted baseline, and how far both sit above the non-learned rules.
 
 `check:spec` compares `lib/mediapipe/featureSpec.ts` against
 `ml/feature_spec.json`. Do not skip it: if those disagree, the model is fed a
