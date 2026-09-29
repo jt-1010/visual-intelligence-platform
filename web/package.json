@@ -13,7 +13,8 @@
     "check:spec": "node scripts/check-feature-spec.mjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run check:spec && npm run typecheck && npm run lint && npm test",
-    "test": "tsx --test --test-force-exit tests/*.test.ts"
+    "test": "tsx --test --test-force-exit tests/*.test.ts",
+    "benchmark:agent": "tsx scripts/benchmark-agent.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.45",

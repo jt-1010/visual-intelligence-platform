@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { LanguageModel } from 'ai';
+import { gateway, type LanguageModel } from 'ai';
 
 /**
  * Two interchangeable LLM backends behind one call.
@@ -28,6 +28,5 @@ export function getModel(backend: Backend = activeBackend()): LanguageModel {
   if (backend === 'ollama') {
     return ollama(process.env.OLLAMA_MODEL ?? 'qwen2.5:3b-instruct');
   }
-  // Plain "provider/model" strings route through the AI SDK gateway.
-  return process.env.GATEWAY_MODEL ?? 'anthropic/claude-sonnet-4.5';
+  return gateway(process.env.GATEWAY_MODEL ?? 'anthropic/claude-sonnet-4.5');
 }
