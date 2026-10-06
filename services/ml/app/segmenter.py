@@ -48,6 +48,21 @@ class SignSegmenter:
         # Read with a default so an older feature_spec.json still loads.
         self.rest_windows: int = s.get("rest_windows_for_boundary", 2)
 
+        # How many windows in a row must agree before a sign is believed.
+        #
+        # The window is 32 frames wide and slides every `stride`, so while a
+        # hand travels INTO a sign the window is full of a handshape that is
+        # neither the sign before nor the sign after -- and the classifier, which
+        # must answer something, names whatever that transition most resembles.
+        # Signing FOUR produced "spicy four spicy": the real sign in the middle,
+        # flanked by two readings of the hand on its way in and out.
+        #
+        # A transition is brief and a held sign is not, so agreement over time
+        # separates them. This costs stride * windows frames of latency before a
+        # sign appears (~0.4s at the defaults), which is the honest price of not
+        # emitting words the person never signed.
+        self.stability_windows: int = s.get("stability_windows", 3)
+
         self.target_frames: int = spec()["frames"]
         self.pose_names: list[str] = spec()["pose_index_names"]
         self.n_hand: int = spec()["hands"]["count"] * spec()["hands"]["points_per_hand"]
@@ -58,6 +73,8 @@ class SignSegmenter:
         self.frames_since_emit = 10**9
         self.last_label: str | None = None
         self.quiet_windows = 0
+        self.candidate: str | None = None
+        self.candidate_windows = 0
 
     def _wrist_motion(self) -> float:
         """Mean frame-to-frame wrist displacement, in shoulder-width units.
@@ -124,9 +141,24 @@ class SignSegmenter:
         watches for.
         """
         if confidence < self.confidence_threshold:
+            # An unsure reading breaks the run rather than extending it.
+            self.candidate = None
+            self.candidate_windows = 0
             return False
+
+        # Hold the reading until it has been said the same way several times.
+        if label != self.candidate:
+            self.candidate = label
+            self.candidate_windows = 1
+            return False
+
+        self.candidate_windows += 1
+        if self.candidate_windows < self.stability_windows:
+            return False
+
         if label == self.last_label:
             return False
+
         self.last_label = label
         self.frames_since_emit = 0
         return True
@@ -137,3 +169,5 @@ class SignSegmenter:
         self.frames_since_emit = 10**9
         self.last_label = None
         self.quiet_windows = 0
+        self.candidate = None
+        self.candidate_windows = 0

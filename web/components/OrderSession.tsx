@@ -219,32 +219,49 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           said, and the other ways to say something.
          ---------------------------------------------------------------- */}
       <main className="flex min-w-0 flex-1 flex-col gap-4">
-        <div className="relative min-h-0 flex-1">
-          <CameraStage
-            onFrame={handleFrame}
-            onArrive={handleArrive}
-            onDepart={handleDepart}
-            presence={presence}
-            thresholds={thresholds}
-            glosses={glossBuffer.glosses}
-            showPose={showOverlay}
-          />
+        {/* ----------------------------------------------------------------
+            The conversation is the surface, and the camera is inset into its
+            bottom-right corner rather than sitting in its own box above it.
 
-          {/* Sound lives on the view it belongs to, out of the reading path. */}
-          <button
-            type="button"
-            onClick={() => {
-              setMuted((m) => !m);
-              speech.cancel();
-            }}
-            aria-pressed={!muted}
-            className="absolute right-4 top-4 min-h-11 rounded-control bg-paper/90 px-4 text-[1rem] font-bold text-ink-soft backdrop-blur-sm transition hover:text-ink"
-          >
-            {muted ? 'Sound off' : 'Sound on'}
-          </button>
+            Two reasons. The words are what you read -- a reply listing tender
+            sizes did not fit in a short strip, and having to scroll a terminal
+            to find out what it just said is no use to someone reading it
+            instead of hearing it. And while you sign you glance at your hands
+            and read in the same place, instead of looking between two panels.
+
+            The panel reserves the corner with padding, so text never runs
+            underneath the camera.
+           ---------------------------------------------------------------- */}
+        {/* flex flex-col, so the panel inside actually fills this box rather
+            than collapsing to the height of its text. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <CaptionPanel turns={turns} glosses={glossBuffer.glosses} thinking={busy} />
+
+          <div className="pointer-events-none absolute bottom-5 right-5 flex w-[18rem] flex-col gap-2 xl:w-[21rem]">
+            <div className="pointer-events-auto aspect-video w-full overflow-hidden rounded-panel shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+              <CameraStage
+                onFrame={handleFrame}
+                onArrive={handleArrive}
+                onDepart={handleDepart}
+                presence={presence}
+                thresholds={thresholds}
+                showPose={showOverlay}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMuted((m) => !m);
+                speech.cancel();
+              }}
+              aria-pressed={!muted}
+              className="pointer-events-auto self-end rounded-control border border-line bg-card px-3.5 py-2 text-[0.9375rem] font-bold text-ink-soft transition hover:text-ink"
+            >
+              {muted ? 'Sound off' : 'Sound on'}
+            </button>
+          </div>
         </div>
-
-        <CaptionPanel turns={turns} thinking={busy} />
 
         {choice && (
           <ChoicePrompt

@@ -5,6 +5,8 @@ import type { Turn } from '@/lib/interaction/transcript';
 
 type Props = {
   turns: Turn[];
+  /** Signs recognised but not yet sent -- the person mid-sentence. */
+  glosses: string[];
   thinking: boolean;
 };
 
@@ -25,16 +27,16 @@ type Props = {
  * was that?" -- and it is also, incidentally, what fills a column that used to
  * be two-thirds empty.
  */
-export function CaptionPanel({ turns, thinking }: Props) {
+export function CaptionPanel({ turns, glosses, thinking }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
-  const empty = turns.length === 0 && !thinking;
+  const empty = turns.length === 0 && glosses.length === 0 && !thinking;
 
   // Newest turn pinned into view. A customer should never have to scroll to
   // read the thing that was just said to them.
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, thinking]);
+  }, [turns, glosses, thinking]);
 
   // While a reply is still coming, nothing gets the display size. Leaving the
   // PREVIOUS answer in the big type would present a stale line as the current
@@ -58,20 +60,21 @@ export function CaptionPanel({ turns, thinking }: Props) {
       aria-label="Conversation"
       aria-atomic="false"
       /*
-        A fixed strip, not a column that grows. The camera is the thing you are
-        working with, so the words it says back sit under it at a readable size
-        and stop there. History is kept and scrolls inside this height -- a Deaf
-        customer still needs to be able to look back at what was said -- but it
-        no longer competes with the view of your own hands for the screen.
+        The conversation takes the room again. As a short strip it could not hold
+        one reply about tender sizes without scrolling, which is no use to
+        someone who reads this instead of hearing it.
+
+        pb reserves the bottom-right corner the camera is inset into, so text
+        never slides underneath it.
       */
       className={[
-        'flex h-[10.5rem] shrink-0 flex-col overflow-y-auto rounded-panel border border-line',
-        'bg-card px-7 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        'flex min-h-0 flex-1 flex-col overflow-y-auto rounded-panel border border-line',
+        'bg-card px-8 py-7 pb-[12.5rem] shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
       ].join(' ')}
     >
       {empty ? (
         <div className="my-auto">
-          <p className="max-w-[26ch] text-balance text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
+          <p className="max-w-[34ch] text-balance text-[clamp(1.5rem,2.2vw,2.125rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
             Step up to order.
           </p>
           <p className="mt-2 max-w-[44ch] text-[1.0625rem] leading-relaxed text-ink-soft">
@@ -83,13 +86,13 @@ export function CaptionPanel({ turns, thinking }: Props) {
         // composer, so it never moves as the history grows above it. (justify-end
         // would do the same until the content overflows, then clip the oldest
         // turns out of reach -- an auto margin scrolls correctly.)
-        <div className="mt-auto space-y-4">
+        <div className="mt-auto space-y-5">
           {turns.map((turn) => {
             if (turn.role === 'customer') {
               return (
                 <div key={turn.id}>
                   <p className="text-[0.9375rem] text-ink-faint">{turn.label}</p>
-                  <p className="mt-1 max-w-[46ch] text-[1.125rem] leading-snug text-ink-soft">
+                  <p className="mt-1 max-w-[68ch] text-[1.1875rem] leading-snug text-ink-soft">
                     {turn.text}
                   </p>
                 </div>
@@ -104,8 +107,8 @@ export function CaptionPanel({ turns, thinking }: Props) {
                 key={turn.id}
                 className={
                   newest
-                    ? 'max-w-[26ch] text-balance text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink'
-                    : 'max-w-[46ch] text-[1.125rem] leading-relaxed text-ink-soft'
+                    ? 'max-w-[34ch] text-balance text-[clamp(1.5rem,2.2vw,2.125rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink'
+                    : 'max-w-[68ch] text-[1.1875rem] leading-relaxed text-ink-soft'
                 }
               >
                 {turn.text}
@@ -119,8 +122,34 @@ export function CaptionPanel({ turns, thinking }: Props) {
           })}
 
 
+          {/*
+            The signs read so far, while you are still signing.
+
+            Deliberately NOT bg-white/text-ink: that pair is white-on-white once
+            the dark palette is active, which rendered each recognised word as a
+            blank chip -- the word was there and simply could not be seen. These
+            colours are defined for both themes.
+          */}
+          {glosses.length > 0 && (
+            <div aria-live="polite">
+              <p className="text-[0.9375rem] text-ink-faint">You&rsquo;re signing</p>
+              <p className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="sr-only">Signs recognised so far:</span>
+                {glosses.map((gloss, i) => (
+                  <span
+                    key={`${gloss}-${i}`}
+                    className="rounded-control border border-action bg-action-soft px-3.5 py-1.5 text-[1.25rem] font-bold tracking-[-0.01em] text-action"
+                  >
+                    {gloss}
+                  </span>
+                ))}
+                <span className="text-[1rem] text-ink-faint">keep going…</span>
+              </p>
+            </div>
+          )}
+
           {awaitingReply && (
-            <p className="text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
+            <p className="text-[clamp(1.5rem,2.2vw,2.125rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
               One moment…
             </p>
           )}

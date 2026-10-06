@@ -93,10 +93,53 @@ def test_a_different_sign_is_emitted_immediately():
 
 
 def test_low_confidence_is_rejected():
+    """A confident reading still has to be repeated before it is believed.
+
+    This used to assert that one confident call emits. It no longer does, and
+    the change is the point: a single window is exactly what a hand travelling
+    through a sign produces.
+    """
     seg = SignSegmenter()
     threshold = spec()["segmentation"]["confidence_threshold"]
-    assert not seg.accept("BURGER", threshold - 0.01)
-    assert seg.accept("BURGER", threshold + 0.01)
+
+    for _ in range(seg.stability_windows + 2):
+        assert not seg.accept("BURGER", threshold - 0.01), "unsure readings never emit"
+
+    emitted = [seg.accept("BURGER", threshold + 0.01) for _ in range(seg.stability_windows)]
+    assert emitted[-1] is True, "a reading held for stability_windows is believed"
+    assert emitted[:-1] == [False] * (seg.stability_windows - 1), "and not before"
+
+
+def test_a_sign_passed_through_on_the_way_in_is_not_emitted():
+    """Signing FOUR read as "spicy four spicy" -- the hand on its way in and out.
+
+    The flanking readings last a window or two; the sign itself is held. Only
+    the held one may reach the person.
+    """
+    seg = SignSegmenter()
+    emitted = []
+
+    def feed(label: str, windows: int) -> None:
+        for _ in range(windows):
+            if seg.accept(label, 0.95):
+                emitted.append(label)
+
+    feed("SPICY", 2)   # travelling into the handshape
+    feed("FOUR", 8)    # the sign, held
+    feed("SPICY", 2)   # travelling back out
+
+    assert emitted == ["FOUR"], f"got {emitted}"
+
+
+def test_a_flicker_does_not_break_a_held_sign():
+    """One stray window inside a held sign must not split it into two signs."""
+    seg = SignSegmenter()
+    emitted = []
+    for label in ["FOUR"] * 5 + ["SPICY"] + ["FOUR"] * 5:
+        if seg.accept(label, 0.95):
+            emitted.append(label)
+
+    assert emitted == ["FOUR"], f"got {emitted}"
 
 
 def test_returning_to_rest_clears_the_debounce():
