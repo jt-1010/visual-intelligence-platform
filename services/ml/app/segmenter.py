@@ -38,6 +38,15 @@ class SignSegmenter:
         self.motion_threshold: float = s["motion_gate_threshold"]
         self.confidence_threshold: float = s["confidence_threshold"]
         self.debounce_frames: int = s["debounce_frames"]
+        # How many consecutive quiet windows count as a real phrase boundary.
+        #
+        # Kept small on purpose. `_wrist_motion` is already a mean over the
+        # whole 32-frame buffer, so a brief hold partway through a sign barely
+        # moves it; this is a little hysteresis on top of that, not the main
+        # defence. Raising it delays the boundary by roughly stride/fps seconds
+        # per step, which pushes back how soon a repeated sign can be signed.
+        # Read with a default so an older feature_spec.json still loads.
+        self.rest_windows: int = s.get("rest_windows_for_boundary", 2)
 
         self.target_frames: int = spec()["frames"]
         self.pose_names: list[str] = spec()["pose_index_names"]
@@ -48,6 +57,7 @@ class SignSegmenter:
         self.frames_seen = 0
         self.frames_since_emit = 10**9
         self.last_label: str | None = None
+        self.quiet_windows = 0
 
     def _wrist_motion(self) -> float:
         """Mean frame-to-frame wrist displacement, in shoulder-width units.
@@ -81,19 +91,41 @@ class SignSegmenter:
 
         motion = self._wrist_motion()
         if motion < self.motion_threshold:
-            # Hands are at rest. Treat this as a phrase boundary so the next
-            # real sign is never suppressed by the debounce.
-            self.last_label = None
+            # Hands are at rest -- but only SUSTAINED rest is a phrase boundary.
+            #
+            # Most signs have a hold partway through where the wrists barely
+            # move, and clearing last_label on the first quiet window let that
+            # hold reopen the debounce mid-sign. The next window then re-emitted
+            # the sign already in progress, which is how one WANT became
+            # "want want want want want" and the phrase never settled long
+            # enough to be sent. Requiring several consecutive quiet windows
+            # distinguishes a hold inside a sign from a pause between signs.
+            self.quiet_windows += 1
+            if self.quiet_windows >= self.rest_windows:
+                self.last_label = None
             return None
 
+        self.quiet_windows = 0
         window = resample(np.stack(self.buffer), self.target_frames)
         return {"window": window, "motion": motion}
 
     def accept(self, label: str, confidence: float) -> bool:
-        """Decide whether a prediction should actually be emitted."""
+        """Decide whether a prediction should actually be emitted.
+
+        `last_label` is a latch on the sign currently being made, not a
+        rate limit. The previous version re-emitted the same label every
+        `debounce_frames`, because emitting reset the counter it was compared
+        against -- so holding WANT for two seconds produced WANT three times,
+        and holding it longer produced more. That is the "want want want want
+        want" in the demo.
+
+        A sign is emitted once when it starts. It can only be emitted again
+        after a boundary: a different sign, or the sustained rest that `push`
+        watches for.
+        """
         if confidence < self.confidence_threshold:
             return False
-        if label == self.last_label and self.frames_since_emit < self.debounce_frames:
+        if label == self.last_label:
             return False
         self.last_label = label
         self.frames_since_emit = 0
@@ -104,3 +136,4 @@ class SignSegmenter:
         self.frames_seen = 0
         self.frames_since_emit = 10**9
         self.last_label = None
+        self.quiet_windows = 0

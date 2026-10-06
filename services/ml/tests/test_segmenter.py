@@ -60,8 +60,15 @@ def test_moving_hands_produce_candidates():
     assert got[0]["motion"] > spec()["segmentation"]["motion_gate_threshold"]
 
 
-def test_debounce_suppresses_a_repeated_label():
-    """One sign spans many windows; it must be emitted once, not once per window."""
+def test_a_held_sign_is_emitted_exactly_once():
+    """One sign spans many windows; it must be emitted once, not once per window.
+
+    This assertion used to read `accepted <= (120 // debounce) + 1`, which
+    allowed six. It passed while the demo was producing
+    "want want want want want", because emitting reset the very counter the
+    debounce compared against, making it a rate limit rather than a latch.
+    The sign is held for the whole run here, so the only correct answer is one.
+    """
     seg = SignSegmenter()
     accepted = 0
     for t in range(120):
@@ -69,9 +76,20 @@ def test_debounce_suppresses_a_repeated_label():
             if seg.accept("BURGER", 0.95):
                 accepted += 1
 
-    debounce = spec()["segmentation"]["debounce_frames"]
-    # 120 frames of continuous signing, gated to one emit per debounce window.
-    assert 1 <= accepted <= (120 // debounce) + 1, f"emitted {accepted} times"
+    assert accepted == 1, f"emitted {accepted} times"
+
+
+def test_a_different_sign_is_emitted_immediately():
+    """Changing sign is a boundary in itself -- no pause should be required."""
+    seg = SignSegmenter()
+    emitted = []
+    for t in range(120):
+        if seg.push(make_frame(t, moving=True)) is not None:
+            label = "BURGER" if t < 60 else "FRIES"
+            if seg.accept(label, 0.95):
+                emitted.append(label)
+
+    assert emitted == ["BURGER", "FRIES"]
 
 
 def test_low_confidence_is_rejected():

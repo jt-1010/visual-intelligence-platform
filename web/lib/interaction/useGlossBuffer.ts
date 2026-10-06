@@ -19,10 +19,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const PHRASE_GAP_MS = 1800;
 const TERMINATORS = new Set(['FINISH', 'DONE', 'THAT-ALL', 'THANK-YOU']);
 
+/**
+ * How long the same sign is treated as still being held rather than signed again.
+ *
+ * The recogniser re-classifies several times a second, so one held sign arrives
+ * as a burst of identical labels. Those repeats used to be appended AND to
+ * restart the phrase timer, which had two effects: the buffer filled with
+ * "want want want want want", and because the timer never ran down, the phrase
+ * was never sent at all -- the screen just said "still signing" indefinitely.
+ *
+ * A deliberate repetition comes after a visible pause, which is longer than
+ * this window, so it still gets through.
+ */
+const REPEAT_WINDOW_MS = 1200;
+
 export function useGlossBuffer(onPhrase: (glosses: string[]) => void) {
   const [glosses, setGlosses] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bufferRef = useRef<string[]>([]);
+  const lastAddedAtRef = useRef(0);
   const onPhraseRef = useRef(onPhrase);
 
   useEffect(() => {
@@ -41,7 +56,22 @@ export function useGlossBuffer(onPhrase: (glosses: string[]) => void) {
 
   const add = useCallback(
     (label: string) => {
-      bufferRef.current = [...bufferRef.current, label];
+      const now = Date.now();
+      const buffer = bufferRef.current;
+      const stillHolding =
+        buffer.length > 0 &&
+        buffer[buffer.length - 1] === label &&
+        now - lastAddedAtRef.current < REPEAT_WINDOW_MS;
+
+      // Returning BEFORE the timer is cleared is the important part: a held
+      // sign must not keep postponing the phrase boundary.
+      if (stillHolding) {
+        lastAddedAtRef.current = now;
+        return;
+      }
+      lastAddedAtRef.current = now;
+
+      bufferRef.current = [...buffer, label];
       setGlosses(bufferRef.current);
 
       if (timerRef.current) clearTimeout(timerRef.current);
