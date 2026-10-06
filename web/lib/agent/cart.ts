@@ -210,7 +210,55 @@ export async function getCart(sessionId: string): Promise<CartView> {
 
 export type AddResult =
   | { ok: true; added: CartLine; cart: CartView }
-  | { ok: false; reason: 'not_found'; suggestions: MenuMatch[] };
+  | { ok: false; reason: 'not_found'; suggestions: MenuMatch[] }
+  | { ok: false; reason: 'ambiguous'; query: string; options: MenuMatch[]; totalMatches: number };
+
+/**
+ * A query names exactly one item only at these scores: an exact slug or an
+ * exact item name. Everything below is a CATEGORY word.
+ */
+const NAMES_ONE_ITEM = 95;
+
+/** How many choices to offer. More than this is a list, not a question. */
+const MAX_OPTIONS = 5;
+
+export type Resolution =
+  | { kind: 'none' }
+  | { kind: 'one'; item: MenuMatch }
+  | { kind: 'many'; options: MenuMatch[]; totalMatches: number };
+
+/**
+ * Decide whether a query picked an item, or merely a kind of item.
+ *
+ * This is the whole disambiguation pipeline, and it is deliberately ordinary
+ * code rather than a model decision. `addToCart` used to take `matches[0]` and
+ * add it, with the tie broken by price — so "burger" silently added the
+ * cheapest of thirteen burgers, and "sweet" added a Sweetened Iced Tea to an
+ * order nobody had asked for one in.
+ *
+ * It matters most on the sign path. The classifier knows 64 signs, so a signer
+ * CANNOT say "Double Quarter Pounder with Cheese" — the most they can produce
+ * is BURGER. Asking which one is not a fallback for when recognition went
+ * wrong; for sign input it is the normal, expected shape of the conversation.
+ *
+ * Keeping it out of the model is what makes it reliable: a small local model is
+ * poor at deciding whether thirteen things are the same thing, and perfectly
+ * capable of reading back a list it was handed.
+ */
+export function resolveMenuQuery(matches: MenuMatch[]): Resolution {
+  if (matches.length === 0 || matches[0].score < 40) return { kind: 'none' };
+
+  const top = matches[0];
+  if (top.score >= NAMES_ONE_ITEM) return { kind: 'one', item: top };
+
+  // Several items match this word equally well, so the person named a kind.
+  const tied = matches.filter((m) => m.score === top.score);
+  if (tied.length > 1) {
+    return { kind: 'many', options: tied.slice(0, MAX_OPTIONS), totalMatches: tied.length };
+  }
+
+  return { kind: 'one', item: top };
+}
 
 export async function addToCart(
   sessionId: string,
@@ -219,12 +267,15 @@ export async function addToCart(
   modifierNames: string[] = [],
 ): Promise<AddResult> {
   const db = await getDb();
-  const matches = await searchMenu(itemQuery, 5);
+  // Wide enough to count the ties honestly: "chicken" matches eighteen items,
+  // and a window of five would report three of them as the whole choice.
+  const matches = await searchMenu(itemQuery, 40);
+  const resolved = resolveMenuQuery(matches);
 
   // Refuse to guess when the top match is weak. A wrong item added silently is
   // worse than one clarifying question. But never answer with a bare "no" --
   // come back with the nearest things we actually sell.
-  if (matches.length === 0 || matches[0].score < 40) {
+  if (resolved.kind === 'none') {
     return {
       ok: false,
       reason: 'not_found',
@@ -232,7 +283,17 @@ export async function addToCart(
     };
   }
 
-  const item = matches[0];
+  if (resolved.kind === 'many') {
+    return {
+      ok: false,
+      reason: 'ambiguous',
+      query: itemQuery,
+      options: resolved.options,
+      totalMatches: resolved.totalMatches,
+    };
+  }
+
+  const item = resolved.item;
   const mods = await findModifiers(modifierNames);
   const cartId = await getOrCreateCartId(sessionId);
 

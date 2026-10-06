@@ -10,8 +10,10 @@ import {
   confirmOrder,
   getCart,
   removeFromCart,
+  resolveMenuQuery,
   searchMenu,
 } from '@/lib/agent/cart';
+import { resolveIntent } from '@/lib/agent/intent';
 import { getDb } from '@/lib/db';
 import { menuItems, type MenuItem } from '@/lib/db/schema';
 
@@ -122,6 +124,8 @@ describe('items we do not sell', () => {
 
     assert.equal(result.ok, false);
     if (result.ok) return;
+    assert.equal(result.reason, 'not_found', 'we stock nothing like a pizza');
+    if (result.reason !== 'not_found') return;
     assert.ok(result.suggestions.length > 0, 'a refusal must carry alternatives');
     assert.equal((await getCart(s)).itemCount, 0);
   });
@@ -389,5 +393,145 @@ describe('session isolation', () => {
     assert.equal((await getCart(a)).lines[0].name, fixtures.burger.name);
     assert.equal((await getCart(b)).lines[0].name, fixtures.dessert.name);
     assert.equal((await getCart(a)).itemCount, 1);
+  });
+});
+
+describe('disambiguation', () => {
+  /**
+   * The behaviour these cover is the difference between a terminal that serves
+   * a signer and one that does not. The classifier knows a small vocabulary, so
+   * BURGER is the most specific thing a signer can say -- and the menu has
+   * thirteen of them. Picking one silently is not a shortcut, it is the wrong
+   * item in a real order.
+   *
+   * Menu-agnostic, like the rest of this file: the category words are looked up
+   * at run time rather than assumed.
+   */
+  async function wordMatchingSeveral(): Promise<string | null> {
+    for (const word of ['burger', 'chicken', 'fries', 'drink', 'salad', 'nugget']) {
+      const r = resolveMenuQuery(await searchMenu(word, 40));
+      if (r.kind === 'many') return word;
+    }
+    return null;
+  }
+
+  it('a category word offers a choice instead of adding something', async () => {
+    const word = await wordMatchingSeveral();
+    assert.ok(word, 'this menu has no word matching several items; test is moot');
+
+    const s = newSession();
+    const result = await addToCart(s, word!, 2);
+
+    assert.equal(result.ok, false);
+    if (result.ok || result.reason !== 'ambiguous') {
+      assert.fail(`expected an ambiguous result for "${word}"`);
+    }
+    assert.ok(result.totalMatches > 1);
+    assert.ok(result.options.length > 1, 'a choice needs options');
+    assert.equal((await getCart(s)).itemCount, 0, 'nothing may be added while asking');
+  });
+
+  it('naming one item exactly still adds it', async () => {
+    const s = newSession();
+    const result = await addToCart(s, fixtures.burger.name);
+
+    assert.equal(result.ok, true, `"${fixtures.burger.name}" names exactly one item`);
+    assert.equal((await getCart(s)).itemCount, 1);
+  });
+
+  it('offers a short list, not the whole menu', async () => {
+    const word = await wordMatchingSeveral();
+    if (!word) return;
+    const r = resolveMenuQuery(await searchMenu(word, 40));
+    if (r.kind !== 'many') return;
+    assert.ok(r.options.length <= 5, `offered ${r.options.length} options`);
+    assert.ok(r.totalMatches >= r.options.length, 'the true count must not shrink');
+  });
+
+  it('every offered option is a real menu row', async () => {
+    const word = await wordMatchingSeveral();
+    if (!word) return;
+    const r = resolveMenuQuery(await searchMenu(word, 40));
+    if (r.kind !== 'many') return;
+
+    const db = await getDb();
+    const all = await db.select().from(menuItems);
+    const names = new Set(all.map((m) => m.name));
+    for (const o of r.options) {
+      assert.ok(names.has(o.name), `${o.name} is not on the menu`);
+      assert.ok(o.priceCents > 0, `${o.name} has no price`);
+    }
+  });
+
+  it('a word we do not stock is still not-found, not a choice', async () => {
+    assert.equal(resolveMenuQuery(await searchMenu('lobster thermidor', 40)).kind, 'none');
+  });
+});
+
+describe('deterministic intent', () => {
+  /**
+   * The ordinary ordering path must not depend on the model. A local 7B was
+   * measured answering "two burgers" with "Added two Burgers, $9.98" while
+   * calling no tool and adding nothing -- fluent, confident, and false in every
+   * particular. These tests pin the cases that must never reach it.
+   */
+
+  it('a category word asks instead of guessing, and keeps the quantity', async () => {
+    const intent = await resolveIntent('two burgers');
+    assert.equal(intent.kind, 'choose');
+    if (intent.kind !== 'choose') return;
+    assert.equal(intent.qty, 2, 'the quantity must survive the question');
+    assert.ok(intent.options.length > 1);
+    assert.ok(intent.totalMatches > intent.options.length - 1);
+  });
+
+  it('names one item exactly and adds it', async () => {
+    const intent = await resolveIntent(fixtures.burger.name);
+    assert.equal(intent.kind, 'add');
+    if (intent.kind !== 'add') return;
+    assert.equal(intent.items.length, 1);
+    assert.equal(intent.items[0].item.name, fixtures.burger.name);
+    assert.equal(intent.items[0].qty, 1);
+  });
+
+  it('ignores trailing punctuation from a tapped choice', async () => {
+    // The choice buttons send "2 Big Mac." -- the full stop must not stop it
+    // matching the row called "Big Mac", which it previously did.
+    const intent = await resolveIntent(`2 ${fixtures.burger.name}.`);
+    assert.equal(intent.kind, 'add');
+    if (intent.kind !== 'add') return;
+    assert.equal(intent.items[0].qty, 2);
+    assert.equal(intent.items[0].item.name, fixtures.burger.name);
+  });
+
+  it('does not split an item name containing "with"', async () => {
+    const db = await getDb();
+    const all = await db.select().from(menuItems);
+    const withName = all.find((m) => / with /i.test(m.name));
+    if (!withName) return; // menu has no such item; nothing to prove
+
+    const intent = await resolveIntent(withName.name);
+    assert.equal(intent.kind, 'add', `"${withName.name}" must resolve as one item`);
+    if (intent.kind !== 'add') return;
+    assert.equal(intent.items.length, 1);
+  });
+
+  it('hands removals, questions and chatter to the model', async () => {
+    for (const text of [
+      'remove the fries',
+      'cancel everything',
+      'what do you have',
+      'how much is that',
+      'actually make that one burger',
+      'yes',
+      'no thanks',
+      '',
+    ]) {
+      assert.equal((await resolveIntent(text)).kind, 'none', `"${text}" must not be auto-handled`);
+    }
+  });
+
+  it('does not invent an order out of something we do not sell', async () => {
+    assert.equal((await resolveIntent('lobster thermidor')).kind, 'none');
   });
 });

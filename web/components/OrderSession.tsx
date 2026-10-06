@@ -9,10 +9,11 @@ import { CaptionPanel } from './CaptionPanel';
 import { CartPanel, type Cart } from './CartPanel';
 import { MenuGrid, type MenuItem } from './MenuGrid';
 import { Composer } from './Composer';
+import { ChoicePrompt } from './ChoicePrompt';
 import { useSignSocket, type SignEvent } from '@/lib/sign/useSignSocket';
 import { useGlossBuffer } from '@/lib/interaction/useGlossBuffer';
 import { useSpeech, useSpeechRecognition } from '@/lib/interaction/useSpeech';
-import { latestReply, tagged, toTurns } from '@/lib/interaction/transcript';
+import { latestReply, pendingChoice, tagged, toTurns } from '@/lib/interaction/transcript';
 import type { CapturedFrame } from '@/lib/mediapipe/landmarks';
 import {
   DEFAULT_THRESHOLDS,
@@ -58,8 +59,11 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const [showOverlay, setShowOverlay] = useState(tuning);
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
-  const [muted, setMuted] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Speech output is off by default. The work right now is sign recognition,
+  // and a terminal that talks over you while you are trying to sign at it is a
+  // distraction from the thing being tested. The toggle stays: the spoken
+  // channel is how a blind customer uses this, so it is switched off, not gone.
+  const [muted, setMuted] = useState(true);
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/agent', body: { sessionId } }),
@@ -87,6 +91,9 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   // --- What the customer sees, and what gets spoken -------------------------
   const turns = useMemo(() => toTurns(messages), [messages]);
   const assistantText = useMemo(() => latestReply(turns), [turns]);
+  // Read from the tool result rather than the reply, because the reply has
+  // been observed claiming an item was added when none was.
+  const choice = useMemo(() => pendingChoice(messages), [messages]);
 
   const send = useCallback(
     (text: string) => {
@@ -205,18 +212,53 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const busy = status === 'submitted' || status === 'streaming';
 
   return (
-    <div className="flex h-[calc(100dvh-4.5rem)] min-h-0 gap-6">
+    <div className="flex h-[calc(100dvh-4.5rem)] min-h-0 gap-5">
       {/* ----------------------------------------------------------------
-          The conversation holds the centre. For a Deaf customer this column
-          is the entire interaction, so it gets the width and the largest type.
+          You sign AT the camera, so the camera gets the room. Underneath it,
+          only the two things you need while signing: what the terminal just
+          said, and the other ways to say something.
          ---------------------------------------------------------------- */}
       <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="relative min-h-0 flex-1">
+          <CameraStage
+            onFrame={handleFrame}
+            onArrive={handleArrive}
+            onDepart={handleDepart}
+            presence={presence}
+            thresholds={thresholds}
+            showPose={showOverlay}
+          />
+
+          {/* Sound lives on the view it belongs to, out of the reading path. */}
+          <button
+            type="button"
+            onClick={() => {
+              setMuted((m) => !m);
+              speech.cancel();
+            }}
+            aria-pressed={!muted}
+            className="absolute right-4 top-4 min-h-11 rounded-control bg-paper/90 px-4 text-[1rem] font-bold text-ink-soft backdrop-blur-sm transition hover:text-ink"
+          >
+            {muted ? 'Sound off' : 'Sound on'}
+          </button>
+        </div>
+
         <CaptionPanel turns={turns} pendingGlosses={glossBuffer.glosses} thinking={busy} />
+
+        {choice && (
+          <ChoicePrompt
+            choice={choice}
+            disabled={busy}
+            onPick={(name) =>
+              send(tagged('touch', `${choice.quantity > 1 ? choice.quantity : 'One'} ${name}.`))
+            }
+          />
+        )}
 
         {error && (
           <p
             role="alert"
-            className="rounded-panel border border-danger bg-danger-soft px-6 py-4 text-[1rem] text-danger"
+            className="shrink-0 rounded-panel border border-danger bg-danger-soft px-6 py-4 text-[1rem] text-danger"
           >
             {error.message}
           </p>
@@ -230,40 +272,6 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           speechSupported={recognition.supported}
           disabled={busy}
         />
-
-        {/* The self-view sits beside the controls, not above the fold. */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <CameraStage
-            onFrame={handleFrame}
-            onArrive={handleArrive}
-            onDepart={handleDepart}
-            presence={presence}
-            thresholds={thresholds}
-            showPose={showOverlay}
-          />
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-expanded={menuOpen}
-              className="min-h-11 rounded-control border border-line-strong px-4 text-[1rem] font-bold text-ink transition hover:bg-sunk"
-            >
-              {menuOpen ? 'Hide menu' : 'Browse the menu'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMuted((m) => !m);
-                speech.cancel();
-              }}
-              aria-pressed={muted}
-              className="min-h-11 rounded-control border border-line-strong px-4 text-[1rem] text-ink-soft transition hover:bg-sunk hover:text-ink"
-            >
-              {muted ? 'Sound off' : 'Sound on'}
-            </button>
-          </div>
-        </div>
 
         {tuning && (
           <DetectionPanel
@@ -282,36 +290,34 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
       </main>
 
       {/* ----------------------------------------------------------------
-          The order, always visible. Swaps to the menu when asked for, so the
-          menu gets real room instead of a cramped drawer.
+          Menu above, order below, both on screen at once.
+
+          These used to share one panel and a toggle. That was wrong in a way
+          that mattered: being asked "which burger?" is the normal shape of this
+          conversation, and answering it meant switching away from the running
+          total to go and look. Worse, a signer whose vocabulary cannot express
+          "Double Quarter Pounder" needs the menu VISIBLE to point at. The total
+          stays pinned at the bottom, which is the number people check most.
          ---------------------------------------------------------------- */}
-      <div className="flex w-[23rem] shrink-0 flex-col xl:w-[26rem]">
-        {menuOpen ? (
-          <section
-            aria-label="Menu"
-            className="flex h-full min-h-0 flex-col rounded-panel border border-line bg-card"
-          >
-            <div className="flex items-baseline justify-between border-b border-line px-6 py-5">
-              <h2 className="text-[1.375rem] font-bold tracking-[-0.01em]">Menu</h2>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                className="rounded-control px-2 py-1 text-[0.9375rem] text-ink-soft underline-offset-4 transition hover:text-ink hover:underline"
-              >
-                Back to order
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              <MenuGrid
-                categories={menu}
-                disabled={busy}
-                onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
-              />
-            </div>
-          </section>
-        ) : (
-          <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
-        )}
+      <div className="flex w-[25rem] shrink-0 flex-col gap-4 xl:w-[29rem]">
+        <section
+          aria-label="Menu"
+          className="flex min-h-0 flex-1 flex-col rounded-panel border border-line bg-card"
+        >
+          <div className="flex items-baseline justify-between border-b border-line px-6 py-4">
+            <h2 className="text-[1.25rem] font-bold tracking-[-0.01em]">Menu</h2>
+            <p className="text-[0.9375rem] text-ink-faint">Tap to add</p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <MenuGrid
+              categories={menu}
+              disabled={busy}
+              onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
+            />
+          </div>
+        </section>
+
+        <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
       </div>
     </div>
   );

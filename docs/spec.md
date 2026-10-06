@@ -126,6 +126,49 @@ The lesson worth keeping: the test covering this asserted `accepted <= (120 // d
 permitted six emissions, and passed throughout. A bound loose enough to admit the bug is not coverage.
 It now asserts exactly one.
 
+### Ordering is resolved before the model sees it
+
+The menu lives in Postgres and is reached through tool calls, so the model can never
+invent a price. That protects the *database*. It does not protect the *sentence*, and on
+2026-10-05 the difference became concrete. Asked for "two burgers", `qwen2.5:7b-instruct`
+replied:
+
+> "Added two Burgers, $9.98. Which burger would you like? We have Big Mac and Quarter Pounder."
+
+It called no tool at all. Nothing was added, no such price exists, and it named two of the
+thirteen burgers from memory. On a second run it called `search_menu`; on a third,
+`add_to_cart`. Prompting changed which of these happened, not whether it happened.
+
+So the ordinary path no longer asks. `lib/agent/intent.ts` resolves the message against the
+menu first:
+
+| Input | Resolution | Who answers |
+|---|---|---|
+| "two burgers" | 13 rows match equally | **Choice**, from the database |
+| "Big Mac" | one row | **Add**, priced from that row |
+| "lobster thermidor" | nothing | model, which offers alternatives |
+| "remove the fries", "what do you have?" | not a plain add | model |
+
+"Two burgers" is not a language problem; it is a lookup against a 71-row table. Doing it in
+ordinary code makes the common case exact, instant and identical every time, and leaves the
+model the part it is genuinely good at — conversation that is not a lookup. The bar for
+taking over is deliberately high: anything resembling a question, a correction or a removal
+goes to the model, because being wrong here is worse than being slow.
+
+### Choosing is the interaction, not an error path
+
+The classifier knows 64 signs. A signer can produce BURGER; they cannot produce "Double
+Quarter Pounder with Cheese". Thirteen of the menu's burgers are unreachable by signing
+alone, and the same holds for chicken (18 rows), fries and drinks (sizes). Disambiguation is
+therefore not a repair for bad recognition — for the sign path it is the **normal shape of
+every order**, and it is why the menu is now permanently on screen rather than behind a
+toggle.
+
+The options are rendered as buttons from the tool result (`components/ChoicePrompt.tsx`),
+never from the reply text. If the model narrates badly, the choice on screen is still correct
+and still works. Answering by pressing is also faster than signing, which matters when the
+person has just been told their signing was ambiguous.
+
 ### Mamba variant
 
 `ml/asl_mamba/` is a second classifier that swaps the Transformer encoder for a bidirectional Mamba

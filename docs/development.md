@@ -120,9 +120,13 @@ The agent route logs `[agent] backend=... 412ms` for every turn.
 
 **The assistant says it added something, but the order stays empty** - it
 replied without calling the tool. The order panel reads the database, so it is
-telling the truth and the sentence is not. Expect this from a stock quantised
-model on `ollama`; switch to `gateway`, or treat it as the gap the QLoRA
-fine-tune (M5) is meant to close. It is not a bug in the cart.
+telling the truth and the sentence is not.
+
+Plain orders no longer go near the model, so this should now only appear on
+conversational turns. If you see it on something like "two burgers", the
+deterministic resolver declined the message and handed it over — check
+`[agent] resolved locally: ...` in the server log. If that line is missing, the
+model answered, and whatever it said about prices is unverified.
 
 **The hand skeleton does not appear in the self-view** - it only draws once
 MediaPipe has a hand in frame, so it is absent when your hands are down or out

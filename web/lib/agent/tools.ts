@@ -82,6 +82,25 @@ export function buildTools(sessionId: string): ToolSet {
       execute: async ({ item, quantity, modifiers }) => {
         const result = await addToCart(sessionId, item, quantity, modifiers);
 
+        // The person named a KIND of thing, not a thing. Nothing was added.
+        // The options below are the real menu rows -- offer them verbatim and
+        // do not pick one on the person's behalf.
+        if (!result.ok && result.reason === 'ambiguous') {
+          return {
+            added: false,
+            needsChoice: true,
+            askedFor: result.query,
+            message: `"${result.query}" matches ${result.totalMatches} items. Ask which one.`,
+            totalMatches: result.totalMatches,
+            options: result.options.map((o) => ({
+              name: o.name,
+              price: formatMoney(o.priceCents),
+              calories: o.calories,
+            })),
+            quantityTheyWanted: quantity,
+          };
+        }
+
         if (!result.ok) {
           return {
             added: false,

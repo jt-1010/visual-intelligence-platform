@@ -45,7 +45,9 @@ export function CartPanel({ cart, onConfirm, onClear, busy }: Props) {
   return (
     <aside
       aria-label="Your order"
-      className="flex h-full min-h-0 flex-col rounded-panel border border-line bg-card"
+      // flex-1, not h-full: this panel now shares its column with the menu, and
+      // h-full resolved to the whole column and squeezed the menu to nothing.
+      className="flex min-h-0 flex-1 flex-col rounded-panel border border-line bg-card"
     >
       <div className="flex items-baseline justify-between border-b border-line px-6 py-5">
         <h2 className="text-[1.375rem] font-bold tracking-[-0.01em]">Your order</h2>

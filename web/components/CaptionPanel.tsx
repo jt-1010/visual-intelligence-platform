@@ -58,17 +58,24 @@ export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
       role="log"
       aria-label="Conversation"
       aria-atomic="false"
+      /*
+        A fixed strip, not a column that grows. The camera is the thing you are
+        working with, so the words it says back sit under it at a readable size
+        and stop there. History is kept and scrolls inside this height -- a Deaf
+        customer still needs to be able to look back at what was said -- but it
+        no longer competes with the view of your own hands for the screen.
+      */
       className={[
-        'flex min-h-0 flex-1 flex-col overflow-y-auto rounded-panel border border-line',
-        'bg-card px-10 py-9 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        'flex h-[10.5rem] shrink-0 flex-col overflow-y-auto rounded-panel border border-line',
+        'bg-card px-7 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
       ].join(' ')}
     >
       {empty ? (
         <div className="my-auto">
-          <p className="max-w-[26ch] text-balance text-[clamp(1.75rem,2.9vw,2.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
+          <p className="max-w-[26ch] text-balance text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
             Step up to order.
           </p>
-          <p className="mt-4 max-w-[38ch] text-[1.0625rem] leading-relaxed text-ink-soft">
+          <p className="mt-2 max-w-[44ch] text-[1.0625rem] leading-relaxed text-ink-soft">
             Sign, speak, type, or tap the menu — whichever suits you.
           </p>
         </div>
@@ -77,7 +84,7 @@ export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
         // composer, so it never moves as the history grows above it. (justify-end
         // would do the same until the content overflows, then clip the oldest
         // turns out of reach -- an auto margin scrolls correctly.)
-        <div className="mt-auto space-y-6">
+        <div className="mt-auto space-y-4">
           {turns.map((turn) => {
             if (turn.role === 'customer') {
               return (
@@ -98,7 +105,7 @@ export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
                 key={turn.id}
                 className={
                   newest
-                    ? 'max-w-[26ch] text-balance text-[clamp(1.75rem,2.9vw,2.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink'
+                    ? 'max-w-[26ch] text-balance text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink'
                     : 'max-w-[46ch] text-[1.125rem] leading-relaxed text-ink-soft'
                 }
               >
@@ -131,7 +138,7 @@ export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
           )}
 
           {awaitingReply && (
-            <p className="text-[clamp(1.75rem,2.9vw,2.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
+            <p className="text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">
               One moment…
             </p>
           )}

@@ -16,7 +16,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * out a timer.
  */
 
-const PHRASE_GAP_MS = 1800;
+/**
+ * How long the hands may rest before we treat the phrase as finished.
+ *
+ * This was 1800ms, which is a fluent signer's rhythm and far too quick for
+ * someone using this terminal for the first time. People pause mid-sentence to
+ * think, to glance at the menu, to work out how to sign something they have
+ * never had to sign before -- and at 1800ms the terminal interrupted them and
+ * answered half a request. Being cut off mid-phrase is worse than waiting: the
+ * person then has to undo something they never asked for.
+ *
+ * So it is deliberately slower than feels natural to a fluent signer. The
+ * pending signs stay on screen the whole time, so the wait is visible rather
+ * than a dead pause.
+ */
+const PHRASE_GAP_MS = 3500;
 const TERMINATORS = new Set(['FINISH', 'DONE', 'THAT-ALL', 'THANK-YOU']);
 
 /**

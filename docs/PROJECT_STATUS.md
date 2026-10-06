@@ -223,7 +223,7 @@ State these plainly; they are the roadmap.
 
 | Gap | Impact |
 |---|---|
-| **The local model answers but does not order** | Ollama now runs `qwen2.5:7b-instruct` and the conversational layer works end to end — it replies in fluent English. It calls tools unreliably: asked for a cheeseburger it answered *"Ronaldo, can I take your order?"* and never called `addToCart`, leaving the order empty. A stock quantised model is not sufficient for tool-calling; this is precisely the gap the fine-tune exists to close. No gateway key is configured, so there is currently no backend that places orders reliably. |
+| **The local model cannot be trusted to order** | `qwen2.5:7b-instruct` replies fluently and calls tools unreliably — for the same request it has called `add_to_cart`, called `search_menu`, and called nothing at all while claiming *"Added two Burgers, $9.98"* with the order empty and no such price on the menu. **Mitigated, not solved:** plain orders are now resolved against the database before the model is consulted (`lib/agent/intent.ts`), so the common path is exact and never reaches it. Conversational turns still do, and anything the model says about prices on those turns is unverified. This is the gap the QLoRA fine-tune (M5) exists to close. |
 | **QLoRA fine-tune not started** | The plan is to fine-tune Qwen2.5-3B on synthetic ordering dialogues and benchmark it against a hosted model. Harness is written; no model yet. |
 | **Benchmark never run** | 10 scenarios across rules / Qwen / gateway backends exist in code but have produced no results, because of the item above. |
 | **Full-corpus pretraining not done** | Estimated 33 hours single-threaded. Would likely lift accuracy above 88.6%. |

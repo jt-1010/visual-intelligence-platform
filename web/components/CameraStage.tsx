@@ -263,38 +263,50 @@ export function CameraStage({
   }, []);
 
   return (
-    <div className="flex items-center gap-4">
+    /*
+      The stage fills whatever box it is given, because on a terminal you sign
+      AT this. An earlier version made it a small corner self-view on the
+      reasoning that the conversation mattered more; that is true of a chat app
+      and false here. If you cannot see your own hands at a useful size you
+      cannot tell whether a sign was formed clearly, and the camera is the
+      primary input device, not a preview of one.
+    */
+    <div className="relative h-full w-full overflow-hidden rounded-panel border border-line bg-sunk">
       {/*
-        A self-view, not a stage. Its only job is to tell you that you are in
-        frame and being seen -- the same job the small picture of yourself does
-        on a video call -- so it is sized accordingly. Earlier versions gave it
-        half the screen, which took space from the conversation and the order,
-        the two things a customer is actually reading.
+        Mirrored, so moving your right hand moves the right of the image. An
+        unmirrored preview is genuinely disorienting to sign in front of. The
+        canvas is inside the mirrored box with the video, so the joints stay on
+        the hands; the labels sit outside it and read the right way round.
       */}
-      <div className="relative shrink-0 overflow-hidden rounded-panel border border-line bg-sunk">
-        {/*
-          Mirrored, so moving your right hand moves the right of the image.
-          An unmirrored preview is genuinely disorienting to sign in front of,
-          and the overlay is mirrored with it so the skeleton stays on the body.
-        */}
-        <div className="relative h-[8.5rem] w-[11.5rem] scale-x-[-1] sm:h-[9.5rem] sm:w-[12.75rem]">
-          <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
-        </div>
-
-        {status !== 'ready' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-sunk px-3 text-center">
-            <p className="text-[0.8125rem] leading-snug text-ink-soft">{message}</p>
-          </div>
-        )}
+      <div className="absolute inset-0 scale-x-[-1]">
+        <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
       </div>
 
-      <p aria-live="polite" className={`text-[1.0625rem] font-bold ${PRESENCE_TONE[presence]}`}>
+      {status !== 'ready' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-sunk px-8 text-center">
+          <p className="max-w-[30ch] text-[1.0625rem] leading-relaxed text-ink-soft">{message}</p>
+        </div>
+      )}
+
+      {/* Over the picture rather than beside it: the status belongs to the view. */}
+      <p
+        aria-live="polite"
+        className={[
+          'absolute bottom-4 left-4 flex items-center gap-2.5 rounded-control',
+          'bg-paper/90 px-4 py-2.5 text-[1.0625rem] font-bold backdrop-blur-sm',
+          PRESENCE_TONE[presence],
+        ].join(' ')}
+      >
         <span
           aria-hidden="true"
           className={[
-            'mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle',
-            presence === 'present' ? 'bg-action' : presence === 'absent' ? 'bg-line-strong' : 'bg-attention',
+            'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
+            presence === 'present'
+              ? 'bg-action'
+              : presence === 'absent'
+                ? 'bg-line-strong'
+                : 'bg-attention',
           ].join(' ')}
         />
         {PRESENCE_LABEL[presence]}
