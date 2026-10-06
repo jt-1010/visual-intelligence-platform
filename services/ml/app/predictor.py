@@ -19,7 +19,12 @@ from typing import Protocol
 
 import numpy as np
 
-ARTIFACT_DIR = Path(__file__).resolve().parents[3] / "ml" / "asl" / "artifacts"
+# SIGN_ARTIFACT_DIR lets an experiment (e.g. ml/asl_mamba/serve) be served
+# without overwriting the committed model. Unset, behaviour is unchanged.
+ARTIFACT_DIR = Path(
+    os.environ.get("SIGN_ARTIFACT_DIR")
+    or Path(__file__).resolve().parents[3] / "ml" / "asl" / "artifacts"
+)
 MODEL_PATH = ARTIFACT_DIR / "sign_classifier.onnx"
 LABELS_PATH = ARTIFACT_DIR / "labels.json"
 
