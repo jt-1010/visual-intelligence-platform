@@ -12,6 +12,7 @@ import { Composer } from './Composer';
 import { useSignSocket, type SignEvent } from '@/lib/sign/useSignSocket';
 import { useGlossBuffer } from '@/lib/interaction/useGlossBuffer';
 import { useSpeech, useSpeechRecognition } from '@/lib/interaction/useSpeech';
+import { latestReply, tagged, toTurns } from '@/lib/interaction/transcript';
 import type { CapturedFrame } from '@/lib/mediapipe/landmarks';
 import {
   DEFAULT_THRESHOLDS,
@@ -57,9 +58,8 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const [showOverlay, setShowOverlay] = useState(tuning);
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
-  const [understood, setUnderstood] = useState<string | null>(null);
-  const [lastSign, setLastSign] = useState<SignEvent | null>(null);
   const [muted, setMuted] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/agent', body: { sessionId } }),
@@ -84,15 +84,9 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const speech = useSpeech();
   const greetedRef = useRef(false);
 
-  // --- The assistant's current line, for captions and TTS -------------------
-  const assistantText = useMemo(() => {
-    const last = [...messages].reverse().find((m) => m.role === 'assistant');
-    if (!last) return '';
-    return last.parts
-      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-      .map((p) => p.text)
-      .join('');
-  }, [messages]);
+  // --- What the customer sees, and what gets spoken -------------------------
+  const turns = useMemo(() => toTurns(messages), [messages]);
+  const assistantText = useMemo(() => latestReply(turns), [turns]);
 
   const send = useCallback(
     (text: string) => {
@@ -107,9 +101,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const glossBuffer = useGlossBuffer(
     useCallback(
       (glosses: string[]) => {
-        const phrase = glosses.join(' ');
-        setUnderstood(`Signed: ${phrase}`);
-        send(`[SIGN] ${phrase}`);
+        send(tagged('sign', glosses.join(' ')));
       },
       [send],
     ),
@@ -118,7 +110,6 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const sign = useSignSocket(
     useCallback(
       (event: SignEvent) => {
-        setLastSign(event);
         glossBuffer.add(event.label);
       },
       [glossBuffer],
@@ -129,8 +120,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const recognition = useSpeechRecognition(
     useCallback(
       (text: string) => {
-        setUnderstood(`Heard: ${text}`);
-        send(`[SPEECH] ${text}`);
+        send(tagged('speech', text));
       },
       [send],
     ),
@@ -155,7 +145,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const handleArrive = useCallback(() => {
     if (greetedRef.current) return;
     greetedRef.current = true;
-    send('[PRESENCE] A customer has just stepped up to the counter.');
+    send(tagged('presence', 'A customer has just stepped up to the counter.'));
   }, [send]);
 
   const handleDepart = useCallback(() => {
@@ -204,64 +194,36 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
       .catch(() => setMenu({}));
   }, []);
 
+  const confirmOrder = useCallback(() => {
+    send(tagged('touch', "That's everything. Please read back my order and confirm it."));
+  }, [send]);
+
+  const startOver = useCallback(() => {
+    send(tagged('touch', 'Cancel everything and start over.'));
+  }, [send]);
+
   const busy = status === 'submitted' || status === 'streaming';
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
-      {/* ---------------------------------------------------------------
-          Main column. The camera leads: this is a system a person stands in
-          front of and signs at, so seeing yourself tracked matters more than
-          browsing a menu. Touch is a fallback path, not the headline.
-         --------------------------------------------------------------- */}
-      <div className="space-y-5">
-        <div
-          className={
-            tuning ? 'grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]' : ''
-          }
-        >
-          <CameraStage
-            onFrame={handleFrame}
-            onArrive={handleArrive}
-            onDepart={handleDepart}
-            presence={presence}
-            thresholds={thresholds}
-            showOverlay={showOverlay}
-          />
-
-          {tuning && (
-            <DetectionPanel
-              presence={presence}
-              shoulderWidth={shoulderWidth}
-              heldMs={heldMs}
-              handsVisible={handsVisible}
-              bodyDetected={bodyDetected}
-              rawDropouts={rawDropouts}
-              thresholds={thresholds}
-              onChange={updateThresholds}
-              showOverlay={showOverlay}
-              onToggleOverlay={setShowOverlay}
-            />
-          )}
-        </div>
-
-        <CaptionPanel
-          assistantText={assistantText}
-          understood={understood}
-          pendingGlosses={glossBuffer.glosses}
-          thinking={busy}
-        />
+    <div className="flex h-[calc(100dvh-4.5rem)] min-h-0 gap-6">
+      {/* ----------------------------------------------------------------
+          The conversation holds the centre. For a Deaf customer this column
+          is the entire interaction, so it gets the width and the largest type.
+         ---------------------------------------------------------------- */}
+      <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <CaptionPanel turns={turns} pendingGlosses={glossBuffer.glosses} thinking={busy} />
 
         {error && (
-          <p role="alert" className="rounded-xl border border-red-800 bg-red-950 px-5 py-3 text-red-200">
-            Something went wrong: {error.message}
+          <p
+            role="alert"
+            className="rounded-panel border border-danger bg-danger-soft px-6 py-4 text-[1rem] text-danger"
+          >
+            {error.message}
           </p>
         )}
 
         <Composer
-          onSend={(text) => {
-            setUnderstood(`Typed: ${text}`);
-            send(`[TEXT] ${text}`);
-          }}
+          onSend={(text) => send(tagged('text', text))}
           onSpeak={recognition.start}
           onStopListening={recognition.stop}
           listening={recognition.listening}
@@ -269,81 +231,88 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           disabled={busy}
         />
 
-        {/* --- Channel status. Honest about what does and does not work. --- */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-1 text-sm">
-          <StatusRow
-            label="Sign language"
-            ok={sign.connected && sign.status.ready}
-            okText={lastSign ? `${lastSign.label} · ${lastSign.latencyMs}ms` : 'watching'}
-            badText={sign.connected ? 'model not trained yet' : 'recogniser offline'}
+        {/* The self-view sits beside the controls, not above the fold. */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <CameraStage
+            onFrame={handleFrame}
+            onArrive={handleArrive}
+            onDepart={handleDepart}
+            presence={presence}
+            thresholds={thresholds}
+            showPose={showOverlay}
           />
-          <StatusRow
-            label="Voice in"
-            ok={recognition.supported}
-            okText={recognition.listening ? 'listening' : 'ready'}
-            badText="not available"
-          />
-          <StatusRow
-            label="Voice out"
-            ok={speech.supported && !muted}
-            okText={speech.speaking ? 'speaking' : 'ready'}
-            badText={muted ? 'muted' : 'not available'}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setMuted((m) => !m);
-              speech.cancel();
-            }}
-            aria-pressed={muted}
-            className="ml-auto rounded-lg border border-slate-700 px-3 py-1.5 text-slate-300 transition hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          >
-            {muted ? 'Unmute' : 'Mute'}
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-expanded={menuOpen}
+              className="min-h-11 rounded-control border border-line-strong px-4 text-[1rem] font-bold text-ink transition hover:bg-sunk"
+            >
+              {menuOpen ? 'Hide menu' : 'Browse the menu'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMuted((m) => !m);
+                speech.cancel();
+              }}
+              aria-pressed={muted}
+              className="min-h-11 rounded-control border border-line-strong px-4 text-[1rem] text-ink-soft transition hover:bg-sunk hover:text-ink"
+            >
+              {muted ? 'Sound off' : 'Sound on'}
+            </button>
+          </div>
         </div>
 
-        {/* --- Touch fallback: present, but deliberately secondary --- */}
-        <details className="rounded-2xl border border-slate-800 bg-slate-950/60">
-          <summary className="cursor-pointer px-5 py-3 text-sm font-semibold uppercase tracking-widest text-slate-400 hover:text-slate-200">
-            Browse the menu instead
-          </summary>
-          <div className="max-h-80 overflow-y-auto px-5 pb-5">
-            <MenuGrid
-              categories={menu}
-              disabled={busy}
-              onPick={(item) => {
-                setUnderstood(`Tapped: ${item.name}`);
-                send(`[TOUCH] Add one ${item.name}.`);
-              }}
-            />
-          </div>
-        </details>
+        {tuning && (
+          <DetectionPanel
+            presence={presence}
+            shoulderWidth={shoulderWidth}
+            heldMs={heldMs}
+            handsVisible={handsVisible}
+            bodyDetected={bodyDetected}
+            rawDropouts={rawDropouts}
+            thresholds={thresholds}
+            onChange={updateThresholds}
+            showOverlay={showOverlay}
+            onToggleOverlay={setShowOverlay}
+          />
+        )}
+      </main>
+
+      {/* ----------------------------------------------------------------
+          The order, always visible. Swaps to the menu when asked for, so the
+          menu gets real room instead of a cramped drawer.
+         ---------------------------------------------------------------- */}
+      <div className="flex w-[23rem] shrink-0 flex-col xl:w-[26rem]">
+        {menuOpen ? (
+          <section
+            aria-label="Menu"
+            className="flex h-full min-h-0 flex-col rounded-panel border border-line bg-card"
+          >
+            <div className="flex items-baseline justify-between border-b border-line px-6 py-5">
+              <h2 className="text-[1.375rem] font-bold tracking-[-0.01em]">Menu</h2>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="rounded-control px-2 py-1 text-[0.9375rem] text-ink-soft underline-offset-4 transition hover:text-ink hover:underline"
+              >
+                Back to order
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <MenuGrid
+                categories={menu}
+                disabled={busy}
+                onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
+              />
+            </div>
+          </section>
+        ) : (
+          <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
+        )}
       </div>
-
-      {/* --- Right rail: the order --- */}
-      <CartPanel cart={cart} />
-    </div>
-  );
-}
-
-function StatusRow({
-  label,
-  ok,
-  okText,
-  badText,
-}: {
-  label: string;
-  ok: boolean;
-  okText: string;
-  badText: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-400">{label}</span>
-      <span className={ok ? 'text-emerald-400' : 'text-amber-400'}>
-        <span aria-hidden="true">{ok ? '●' : '○'} </span>
-        {ok ? okText : badText}
-      </span>
     </div>
   );
 }

@@ -1,20 +1,30 @@
 import type { Metadata } from 'next';
+import { Atkinson_Hyperlegible } from 'next/font/google';
 import './globals.css';
+
+/*
+  Atkinson Hyperlegible, from the Braille Institute. Its letterforms are drawn
+  so that characters people most often confuse -- I l 1, O 0, c e -- stay
+  distinct at small sizes and low acuity. On an ordering terminal whose whole
+  purpose is access, the typeface is part of the accessibility work rather
+  than a style preference.
+*/
+const atkinson = Atkinson_Hyperlegible({
+  weight: ['400', '700'],
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-atkinson',
+});
 
 export const metadata: Metadata = {
   title: 'SignOrder',
-  description: 'Accessible food ordering by American Sign Language, speech, or touch.',
+  description: 'Order food by sign language, voice, typing, or touch.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      {/*
-        Dark, high-contrast by default. This is a terminal in a bright room read
-        from a metre away, so contrast and type size are accessibility
-        requirements, not styling preferences.
-      */}
-      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">{children}</body>
+    <html lang="en" className={atkinson.variable}>
+      <body className="min-h-screen bg-paper text-ink">{children}</body>
     </html>
   );
 }

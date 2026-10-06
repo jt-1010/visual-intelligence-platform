@@ -158,6 +158,9 @@ ONNX → `ml/asl/artifacts/sign_classifier.onnx` + `labels.json`. The service
 picks it up automatically. Until then sign input is INACTIVE and says so -- it
 does not fake predictions. Set `SIGN_STUB=1` only for pipeline debugging.
 
+Set `SIGN_ARTIFACT_DIR` to serve a different export — an `ml/asl_mamba` run,
+say — without overwriting the committed model.
+
 ---
 
 ## 2. Order recommender

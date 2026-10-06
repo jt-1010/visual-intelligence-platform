@@ -99,10 +99,39 @@ genuine, defensible use of generative AI rather than decoration.
   you will report an inflated number).
 - **Export:** ONNX, served via ONNX Runtime in FastAPI.
 
+### Segmentation
+
 **The hard part is segmentation, not classification.** The classifier labels a clip; a real user signs
-a continuous stream. Handle it with a sliding window over the last 32 frames, a motion-energy gate on
-landmark velocity to skip idle hands, a confidence threshold, and debouncing so one sign isn't emitted
+a continuous stream. The pipeline is a sliding window over the last 32 frames, a motion-energy gate on
+landmark velocity to skip idle hands, a confidence threshold, and a rule for not emitting one sign
 three times. Budget real time for this — it is the most likely thing to make a working model feel broken.
+
+That prediction was borne out on 2026-10-05. The classifier read every sign in the demo correctly and
+the screen still showed `want want want want want eat eat eat pay hamburger hamburger`, with the phrase
+never sent at all. Two causes, both downstream of the model:
+
+- `SignSegmenter.accept()` treated `last_label` as a **rate limit**. Emitting reset `frames_since_emit`,
+  the counter the debounce compared against, so a sign held longer than `debounce_frames` was emitted
+  again every `debounce_frames`. Hold a sign for four seconds, get five of it.
+- `useGlossBuffer` restarted the 1800 ms phrase timer on every repeat, so while repeats kept arriving
+  the gap was never reached and the phrase was never sent.
+
+The rule now: **`last_label` is a latch on the sign in progress, not a rate limit.** A sign is emitted
+once when it starts, and can only be emitted again after a boundary — a *different* sign, or sustained
+rest. `push()` wants several consecutive quiet windows before calling it rest, because most signs have a
+hold partway through where the wrists barely move, and that hold is not a boundary. On the client, a
+repeat of the sign currently being held returns before the phrase timer is touched.
+
+The lesson worth keeping: the test covering this asserted `accepted <= (120 // debounce) + 1`, which
+permitted six emissions, and passed throughout. A bound loose enough to admit the bug is not coverage.
+It now asserts exactly one.
+
+### Mamba variant
+
+`ml/asl_mamba/` is a second classifier that swaps the Transformer encoder for a bidirectional Mamba
+(pure PyTorch; `mamba-ssm` does not build on Windows). It reuses the Transformer's `ConvStem` and keeps
+the same input and output shapes, so the comparison changes one thing. Serve it without disturbing the
+committed model by pointing `SIGN_ARTIFACT_DIR` at its export.
 
 ### 2. Order recommender — produces the "specials" and upsells
 
@@ -151,6 +180,19 @@ machine before it will serve them is slow, and it is the wrong thing to build.
 >1.5s and the bounding box exceeds a size threshold (proxy for "at the counter, not walking past").
 Reset after 5s of absence. Debounce so one person isn't greeted repeatedly.
 
+**Hand landmarks are always drawn in the self-view.** Not as a debugging
+instrument — as feedback. The hands are what the classifier reads, so joints
+landing on your fingers is the one honest signal that the terminal is tracking
+you, available *before* you commit to a phrase and discover it read nothing.
+Signing into a camera with no indication it sees your hands is the visual
+equivalent of speaking into a microphone with no level meter. Left and right
+are coloured differently so a signer can see which hand dropped out of frame.
+
+The pose skeleton and the dashed shoulder-width measurement are a different
+thing: those are calibration instruments for whoever is setting the camera up,
+and they stay behind `?tune=1`. A customer does not need to know the presence
+gate is thresholding on shoulder width.
+
 **Compliance target:** WCAG 2.1 AA — contrast, 44px touch targets, full keyboard nav, ARIA live regions
 for every state change. Cite the DOJ self-service terminal accessibility rules for framing in the report.
 
@@ -159,18 +201,23 @@ for every state change. Cite the DOJ self-service terminal accessibility rules f
 ## Repository layout
 
 ```
-web/            Next.js 15 + TS + Tailwind + AI SDK v6
+web/            Next.js + TS + Tailwind + AI SDK
+  app/asl/             the ordering terminal (?tune=1 adds calibration)
   app/api/agent/       streaming agent route, tool definitions
   components/          camera, captions, cart, menu
+  lib/interaction/     gloss buffering, speech, transcript
   lib/mediapipe/       landmark capture + presence detection
 services/ml/           FastAPI: /ws/sign, /recommend, health
+  app/segmenter.py     continuous stream -> discrete signs
 ml/
   asl/                 data prep · model · train · eval · export_onnx
+  asl_mamba/           same task, Mamba encoder — the architecture comparison
   recsys/              data prep · train · eval
   llm/                 dialogue synthesis · qlora_train · merge · export_gguf
   collect/             self-recording tool for the 30 custom signs
 notebooks/             Colab training notebooks
 docs/                  spec, ADRs, thesis figures
+meetings/              advisor and team notes
 data/                  gitignored; download scripts only
 ```
 

@@ -6,8 +6,9 @@ channel the person actually uses.
 
 CMPE 295A · San José State University · Advisor: Prof. Vidhyacharan Bhaskar
 
-> **Note:** the repository is still named `multimodal-accessibility-traffic-ai` for historical
-> reasons. The project is ASL accessible ordering only.
+> **Note:** the repository is named `visual-intelligence-platform` for historical reasons — it once
+> carried a second, traffic-related workstream. That has been dropped. The project is ASL accessible
+> ordering only.
 
 ## Why landmarks, not video
 
@@ -44,10 +45,12 @@ Browser (Chrome)                  Next.js /api/agent          FastAPI services/m
 | `web` | Next.js + TypeScript + Tailwind UI and agent route |
 | `services/ml` | FastAPI: sign recognition WebSocket, recommender |
 | `ml/asl` | ASL classifier: data prep, training, eval, ONNX export |
+| `ml/asl_mamba` | Same task with a Mamba encoder — the architecture comparison |
 | `ml/recsys` | Order recommender training |
 | `ml/llm` | Synthetic dialogues, QLoRA fine-tune, GGUF export |
 | `ml/collect` | Tool for recording our own ordering signs |
 | `docs` | Spec, ADRs, figures |
+| `meetings` | Advisor and team notes |
 
 ## Getting started
 
@@ -55,16 +58,22 @@ See [docs/development.md](docs/development.md).
 
 ## The three models we train
 
-1. **ASL sign classifier** — Transformer over landmark sequences, ~280 signs. The centerpiece.
+1. **ASL sign classifier** — Transformer over landmark sequences. The centerpiece. A Mamba variant in
+   `ml/asl_mamba` shares the stem and the input/output shapes, so the two can be compared directly.
 2. **Order recommender** — next-item model over cart state; drives specials and upsells.
 3. **Conversational LLM** — Qwen2.5-3B QLoRA fine-tuned on synthetic ordering dialogues, served
    locally via Ollama, benchmarked against a hosted baseline.
+
+Classification accuracy is not the whole system. Cutting a continuous stream into discrete signs is a
+separate problem, and the one most likely to make a working model look broken — see **Segmentation** in
+[docs/spec.md](docs/spec.md).
 
 ## Documentation
 
 | Doc | What |
 |---|---|
 | [docs/development.md](docs/development.md) | Running it locally |
+| [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) | **What is built, the real numbers, and what is not done** |
 | [docs/datasets.md](docs/datasets.md) | **Which sign language datasets exist and which we use** |
 | [docs/training.md](docs/training.md) | **What we train, on what data, with what settings** |
 | [data/menu/README.md](data/menu/README.md) | Where the menu came from, and which numbers are estimates |

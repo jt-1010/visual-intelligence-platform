@@ -19,34 +19,56 @@ type Props = {
   disabled?: boolean;
 };
 
+const CATEGORY_LABEL: Record<string, string> = {
+  burgers: 'Burgers',
+  chicken: 'Chicken',
+  sides: 'Sides',
+  drinks: 'Drinks',
+  desserts: 'Desserts',
+  salads: 'Salads',
+  breakfast: 'Breakfast',
+  combos: 'Meals',
+  other: 'More',
+};
+
 /**
- * Touch input, routed through the same agent as speech and sign.
+ * Touch ordering, routed through the same agent as signing and speech.
  *
- * Tapping does not mutate the cart directly - it sends a [TOUCH] message and
- * lets the agent act on it. That keeps one conversation, so the read-back at
- * the end covers everything however it was ordered, and a person can start by
- * tapping and finish by signing without the system losing the thread.
+ * Tapping does not change the cart directly -- it sends a message and lets the
+ * agent act on it. That keeps one conversation, so the read-back at the end
+ * covers everything however it was ordered, and someone can start by tapping
+ * and finish by signing without the terminal losing the thread.
  */
 export function MenuGrid({ categories, onPick, disabled }: Props) {
   const names = Object.keys(categories);
   if (names.length === 0) return null;
 
   return (
-    <section aria-label="Menu" className="space-y-5">
+    <div className="space-y-7">
       {names.map((category) => (
-        <div key={category}>
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-widest text-slate-400">
-            {category}
+        <section key={category}>
+          <h3 className="mb-3 text-[1.125rem] font-bold tracking-[-0.01em]">
+            {CATEGORY_LABEL[category] ?? category}
           </h3>
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {/*
+            One item per row, not a grid.
+
+            This panel is a fixed ~23rem column, and Tailwind's responsive
+            prefixes key off the VIEWPORT, not the container -- so `lg:grid-cols-3`
+            kicked in on a wide screen precisely where the sidebar could least
+            afford it. Cards came out 104px wide: a 56px photo, padding, and
+            sixteen pixels of room for the name, which rendered every item as
+            "B.." or "C..". A row gives the name the width it needs and makes
+            the price easy to scan down the right edge.
+          */}
+          <ul className="space-y-2">
             {categories[category].map((item) => (
               <li key={item.slug}>
                 <button
                   type="button"
                   onClick={() => onPick(item)}
                   disabled={disabled}
-                  // 44px minimum touch target, per WCAG 2.1 AA.
-                  className="flex min-h-[4.25rem] w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-900 p-2 text-left transition hover:border-emerald-500 hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex w-full items-center gap-3.5 rounded-control border border-line bg-card p-3 text-left transition hover:border-action hover:bg-action-soft focus-visible:border-action disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {item.imageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -54,23 +76,28 @@ export function MenuGrid({ categories, onPick, disabled }: Props) {
                       src={item.imageUrl}
                       alt=""
                       aria-hidden="true"
-                      className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                      className="h-14 w-14 shrink-0 rounded-[0.4rem] object-cover"
                     />
                   )}
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-slate-100">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[1.0625rem] font-bold leading-snug">
                       {item.name}
                     </span>
-                    <span className="block text-sm tabular-nums text-emerald-400">
-                      {formatMoney(item.priceCents)}
-                    </span>
+                    {item.calories !== null && (
+                      <span className="tnum mt-0.5 block text-[0.9375rem] text-ink-soft">
+                        {item.calories} cal
+                      </span>
+                    )}
+                  </span>
+                  <span className="tnum shrink-0 text-[1.0625rem] font-bold">
+                    {formatMoney(item.priceCents)}
                   </span>
                 </button>
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       ))}
-    </section>
+    </div>
   );
 }

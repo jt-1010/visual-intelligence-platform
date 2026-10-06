@@ -1,7 +1,121 @@
 @import 'tailwindcss';
 
-/* Respect the OS setting. Vestibular disorders make large motion genuinely
-   unpleasant, and a terminal animating at someone is not worth that cost. */
+/*
+  SignOrder — a self-service ordering terminal.
+
+  Read standing up, at arm's length, often in a hurry, sometimes in bright
+  light, sometimes with people waiting behind. Every decision below follows
+  from that: large type, high contrast, generous targets, nothing decorative.
+
+  The palette is light because real ordering kiosks are light, because food
+  photography dies on a dark ground, and because a dark screen in a bright
+  restaurant is a mirror.
+*/
+
+@theme {
+  /* --- Light: the default --- */
+  --color-paper: #faf9f7;
+  --color-card: #ffffff;
+  --color-sunk: #f2f0ec;
+  --color-ink: #171614;
+  --color-ink-soft: #5c5953;
+  --color-ink-faint: #8a867e;
+  --color-line: #e4e1db;
+  --color-line-strong: #cfcbc3;
+
+  /* Deep teal. Reads calm and legible rather than alarming, and clears
+     WCAG AA on white at every size we use it. */
+  --color-action: #0b6e5f;
+  --color-action-hover: #095a4e;
+  --color-action-soft: #e6f2ef;
+
+  /* Warm amber for "I am listening to you right now". */
+  --color-attention: #a8500a;
+  --color-attention-soft: #fdf1e5;
+
+  --color-danger: #9a2515;
+  --color-danger-soft: #fdecea;
+
+  --font-sans: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, sans-serif;
+
+  /* One radius for interactive things, one for containers. Two is enough;
+     a different corner on every element is noise, not hierarchy. */
+  --radius-control: 0.625rem;
+  --radius-panel: 1rem;
+}
+
+/* --- Dark, for viewers who ask for it ----------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-paper: #15181a;
+    --color-card: #1d2124;
+    --color-sunk: #121517;
+    --color-ink: #f3f1ee;
+    --color-ink-soft: #b3b0aa;
+    --color-ink-faint: #85827c;
+    --color-line: #2e3337;
+    --color-line-strong: #3f4549;
+
+    --color-action: #5ecfb8;
+    --color-action-hover: #7cdcc8;
+    --color-action-soft: #17312c;
+
+    --color-attention: #e9a165;
+    --color-attention-soft: #33241a;
+
+    --color-danger: #f08b7c;
+    --color-danger-soft: #3a1f1c;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-paper: #15181a;
+  --color-card: #1d2124;
+  --color-sunk: #121517;
+  --color-ink: #f3f1ee;
+  --color-ink-soft: #b3b0aa;
+  --color-ink-faint: #85827c;
+  --color-line: #2e3337;
+  --color-line-strong: #3f4549;
+  --color-action: #5ecfb8;
+  --color-action-hover: #7cdcc8;
+  --color-action-soft: #17312c;
+  --color-attention: #e9a165;
+  --color-attention-soft: #33241a;
+  --color-danger: #f08b7c;
+  --color-danger-soft: #3a1f1c;
+}
+
+/* --- Base --------------------------------------------------------------- */
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures everywhere money appears, so prices in a column line up
+   digit for digit and a total never jitters as it updates. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Focus has to be obvious: this interface is operable by keyboard alone, and
+   for some customers that is the only way in. */
+:focus-visible {
+  outline: 3px solid var(--color-action);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Vestibular disorders make large motion genuinely unpleasant, and a terminal
+   that animates at someone is not worth that cost. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -9,11 +123,35 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Visible focus everywhere: the terminal must be fully keyboard-operable. */
-:focus-visible {
-  outline: 3px solid #34d399;
-  outline-offset: 2px;
+/* The caret in the caption, marking live transcription in progress. */
+@keyframes caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.caret {
+  animation: caret 1.1s ease-in-out infinite;
+}
+
+/* Visually hidden but announced. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
