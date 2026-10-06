@@ -5,7 +5,6 @@ import type { Turn } from '@/lib/interaction/transcript';
 
 type Props = {
   turns: Turn[];
-  pendingGlosses: string[];
   thinking: boolean;
 };
 
@@ -26,16 +25,16 @@ type Props = {
  * was that?" -- and it is also, incidentally, what fills a column that used to
  * be two-thirds empty.
  */
-export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
+export function CaptionPanel({ turns, thinking }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
-  const empty = turns.length === 0 && pendingGlosses.length === 0 && !thinking;
+  const empty = turns.length === 0 && !thinking;
 
   // Newest turn pinned into view. A customer should never have to scroll to
   // read the thing that was just said to them.
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, pendingGlosses, thinking]);
+  }, [turns, thinking]);
 
   // While a reply is still coming, nothing gets the display size. Leaving the
   // PREVIOUS answer in the big type would present a stale line as the current
@@ -119,23 +118,6 @@ export function CaptionPanel({ turns, pendingGlosses, thinking }: Props) {
             );
           })}
 
-          {/* Signs recognised but not yet submitted -- the customer mid-sentence. */}
-          {pendingGlosses.length > 0 && (
-            <div>
-              <p className="text-[0.9375rem] text-ink-faint">You&rsquo;re signing</p>
-              <p className="mt-1 flex flex-wrap items-center gap-2">
-                {pendingGlosses.map((gloss, i) => (
-                  <span
-                    key={`${gloss}-${i}`}
-                    className="rounded-control bg-action-soft px-3 py-1 text-[1.0625rem] font-bold text-action"
-                  >
-                    {gloss}
-                  </span>
-                ))}
-                <span className="text-[0.9375rem] text-ink-faint">keep going…</span>
-              </p>
-            </div>
-          )}
 
           {awaitingReply && (
             <p className="text-[clamp(1.375rem,1.9vw,1.75rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink-faint">

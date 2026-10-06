@@ -24,7 +24,19 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={atkinson.variable}>
-      <body className="min-h-screen bg-paper text-ink">{children}</body>
+      {/*
+        suppressHydrationWarning is here for browser extensions, not for our own
+        markup. Grammarly and similar tools write attributes onto <body>
+        (data-gr-ext-installed, data-new-gr-c-s-check-loaded) before React
+        hydrates, which React then reports as a server/client mismatch we cannot
+        fix and did not cause.
+
+        It suppresses mismatches on THIS element only, one level deep, so a real
+        mismatch anywhere inside the app is still reported.
+      */}
+      <body suppressHydrationWarning className="min-h-screen bg-paper text-ink">
+        {children}
+      </body>
     </html>
   );
 }

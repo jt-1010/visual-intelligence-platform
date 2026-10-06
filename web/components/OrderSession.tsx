@@ -226,6 +226,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             onDepart={handleDepart}
             presence={presence}
             thresholds={thresholds}
+            glosses={glossBuffer.glosses}
             showPose={showOverlay}
           />
 
@@ -243,7 +244,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           </button>
         </div>
 
-        <CaptionPanel turns={turns} pendingGlosses={glossBuffer.glosses} thinking={busy} />
+        <CaptionPanel turns={turns} thinking={busy} />
 
         {choice && (
           <ChoicePrompt

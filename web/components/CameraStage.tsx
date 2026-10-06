@@ -10,6 +10,8 @@ type Props = {
   onDepart: () => void;
   presence: PresenceState;
   thresholds: PresenceThresholds;
+  /** Signs recognised but not yet sent -- the person mid-sentence. */
+  glosses: string[];
   /**
    * Draw the pose skeleton and the shoulder measurement.
    *
@@ -71,6 +73,7 @@ export function CameraStage({
   onDepart,
   presence,
   thresholds,
+  glosses,
   showPose,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -289,11 +292,42 @@ export function CameraStage({
         </div>
       )}
 
-      {/* Over the picture rather than beside it: the status belongs to the view. */}
+      {/*
+        Recognised signs, read back ON the picture.
+
+        While you are signing you are looking at your own hands, not at a panel
+        somewhere else on the screen -- so this is the one place the words can
+        appear and actually be seen as they arrive. It doubles as the proof that
+        recognition is running at all: an empty strip while you sign means the
+        signs are not being read, which is a different problem from the terminal
+        misunderstanding them, and you can tell the two apart at a glance.
+
+        These are provisional. They sit here until you pause, then go to the
+        order as one phrase and move into the conversation below.
+      */}
+      {glosses.length > 0 && (
+        <div
+          aria-live="polite"
+          className="absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-center gap-2 bg-gradient-to-t from-black/80 via-black/60 to-transparent px-5 pb-5 pt-10"
+        >
+          <span className="sr-only">Signs recognised so far:</span>
+          {glosses.map((gloss, i) => (
+            <span
+              key={`${gloss}-${i}`}
+              className="rounded-control bg-white/95 px-3.5 py-1.5 text-[1.125rem] font-bold tracking-[-0.01em] text-ink"
+            >
+              {gloss}
+            </span>
+          ))}
+          <span className="text-[1rem] font-bold text-white/80">keep going…</span>
+        </div>
+      )}
+
+      {/* Moved to the top so the recognised signs own the bottom edge. */}
       <p
         aria-live="polite"
         className={[
-          'absolute bottom-4 left-4 flex items-center gap-2.5 rounded-control',
+          'absolute left-4 top-4 flex items-center gap-2.5 rounded-control',
           'bg-paper/90 px-4 py-2.5 text-[1.0625rem] font-bold backdrop-blur-sm',
           PRESENCE_TONE[presence],
         ].join(' ')}
