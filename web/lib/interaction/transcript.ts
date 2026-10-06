@@ -128,8 +128,24 @@ export type PendingChoice = {
  * standing at a counter.
  */
 export function pendingChoice(messages: UiMessage[]): PendingChoice | null {
+  /*
+    Only the newest reply can be asking a question. Searching the whole history
+    left a stale set of buttons on screen: once the terminal had moved on to
+    something else, the last tool call it happened to make was still the most
+    recent one anywhere in the conversation, so "which one?" stayed up offering
+    nuggets nobody had asked about for several turns.
+  */
+  let last = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const parts = messages[i].parts;
+    if (messages[i].role === 'assistant') {
+      last = i;
+      break;
+    }
+  }
+  if (last === -1) return null;
+
+  {
+    const parts = messages[last].parts;
     for (let j = parts.length - 1; j >= 0; j--) {
       const part = parts[j] as {
         type?: unknown;

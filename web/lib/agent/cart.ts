@@ -51,6 +51,23 @@ export type MenuMatch = MenuItem & { score: number };
  * it is trivial to debug, and scoring rules stay readable. If the menu ever
  * reaches thousands of items, move this to tsvector and keep the same shape.
  */
+/**
+ * Does `text` contain `word` starting at a word boundary?
+ *
+ * Plain `includes` is what made "hi" return forty items: "chicken" contains
+ * "hi", so a greeting scored 50 against every chicken row and the terminal
+ * answered "we have 38 of those". The same flaw matched "ice" inside "Spice"
+ * and "rib" inside "Caribbean".
+ *
+ * Anchoring to a word boundary keeps the matches people mean -- "spicy" still
+ * finds "Sweet N' Spicy Honey BBQ" -- and drops the ones nobody meant.
+ */
+function hasWord(text: string, word: string): boolean {
+  if (word.length < 2) return false;
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}`).test(text);
+}
+
 export async function searchMenu(query: string, limit = 5): Promise<MenuMatch[]> {
   const db = await getDb();
   const all = await db.select().from(menuItems).where(eq(menuItems.available, true));
@@ -68,8 +85,8 @@ export async function searchMenu(query: string, limit = 5): Promise<MenuMatch[]>
       else if (aliases.includes(q)) score = 90;
       else if (name.startsWith(q)) score = 70;
       else if (aliases.some((a) => a.startsWith(q))) score = 65;
-      else if (name.includes(q)) score = 50;
-      else if (aliases.some((a) => a.includes(q) || q.includes(a))) score = 45;
+      else if (hasWord(name, q)) score = 50;
+      else if (aliases.some((a) => hasWord(a, q) || hasWord(q, a))) score = 45;
       else if (item.description.toLowerCase().includes(q)) score = 20;
       else if (item.category === q) score = 15;
 

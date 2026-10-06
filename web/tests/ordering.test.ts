@@ -519,7 +519,6 @@ describe('deterministic intent', () => {
   it('hands removals, questions and chatter to the model', async () => {
     for (const text of [
       'remove the fries',
-      'cancel everything',
       'what do you have',
       'how much is that',
       'actually make that one burger',
@@ -533,5 +532,93 @@ describe('deterministic intent', () => {
 
   it('does not invent an order out of something we do not sell', async () => {
     assert.equal((await resolveIntent('lobster thermidor')).kind, 'none');
+  });
+});
+
+describe('chatter is not an order', () => {
+  /**
+   * From a real session. Typing "hi" produced "We have 38 of those. Which one?
+   * 4 Piece Chicken McNuggets..." -- because "chicken" contains "hi", so a
+   * greeting scored a substring match against every chicken row.
+   */
+  it('a greeting matches nothing on the menu', async () => {
+    for (const greeting of ['hi', 'hey', 'hello']) {
+      assert.equal(
+        (await searchMenu(greeting, 60)).length,
+        0,
+        `"${greeting}" must not match menu items`,
+      );
+    }
+  });
+
+  it('a greeting is never treated as an order', async () => {
+    for (const greeting of ['hi', 'hello', 'hey there', 'good morning']) {
+      assert.equal((await resolveIntent(greeting)).kind, 'none', greeting);
+    }
+  });
+
+  it('matches whole words, not fragments inside them', async () => {
+    // "ice" must not reach "Spice"; "rib" must not reach "Caribbean".
+    for (const [q, forbidden] of [['ice', 'spice'], ['rib', 'caribbean'], ['hi', 'chicken']]) {
+      const names = (await searchMenu(q, 60)).map((m) => m.name.toLowerCase());
+      assert.ok(
+        !names.some((n) => n.includes(forbidden) && !n.includes(` ${q}`) && !n.startsWith(q)),
+        `"${q}" should not match via "${forbidden}"`,
+      );
+    }
+  });
+
+  it('still finds the things people do mean', async () => {
+    assert.ok((await searchMenu('spicy', 60)).length > 0, 'spicy');
+    assert.ok((await searchMenu('burger', 60)).length > 1, 'burger');
+    assert.ok((await searchMenu(fixtures.burger.name, 60)).length > 0, 'full name');
+  });
+
+  it('does not refuse an order because a stop word hides inside a menu word', async () => {
+    // "no" lives inside "nuggets"; a substring check refused real orders.
+    const intent = await resolveIntent(fixtures.burger.name);
+    assert.equal(intent.kind, 'add');
+  });
+});
+
+describe('reading the order back', () => {
+  /**
+   * Asked to read the order back, the model answered "...and 1 Hamburger for
+   * $5.49. Your total is $9.38" over a cart holding one Hamburger and
+   * totalling $6.00. The read-back is where a customer decides to pay, so it
+   * is answered from the database and never by the model.
+   */
+  it('a confirm request is recognised as a read-back', async () => {
+    for (const text of [
+      "That's everything. Please read back my order and confirm it.",
+      'read back my order',
+      "that's all",
+      'confirm my order',
+    ]) {
+      assert.equal((await resolveIntent(text)).kind, 'readback', text);
+    }
+  });
+
+  it('a read-back is not mistaken for an order', async () => {
+    const intent = await resolveIntent("that's everything");
+    assert.notEqual(intent.kind, 'add');
+    assert.notEqual(intent.kind, 'choose');
+  });
+});
+
+describe('starting over', () => {
+  it('is recognised rather than described', async () => {
+    for (const text of ['Cancel everything and start over.', 'start over', 'clear my order']) {
+      assert.equal((await resolveIntent(text)).kind, 'clear', text);
+    }
+  });
+
+  it('actually empties the order', async () => {
+    const s = newSession();
+    await addToCart(s, fixtures.burger.slug, 2);
+    assert.equal((await getCart(s)).itemCount, 2);
+
+    await clearCart(s);
+    assert.equal((await getCart(s)).itemCount, 0, 'a cleared order must really be empty');
   });
 });

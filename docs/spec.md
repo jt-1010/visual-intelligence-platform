@@ -146,8 +146,26 @@ menu first:
 |---|---|---|
 | "two burgers" | 13 rows match equally | **Choice**, from the database |
 | "Big Mac" | one row | **Add**, priced from that row |
-| "lobster thermidor" | nothing | model, which offers alternatives |
+| "read back my order" | — | **Read-back**, from the order |
+| "start over" | — | **Cleared**, then confirmed |
+| "hi", "lobster thermidor" | nothing orderable | model |
 | "remove the fries", "what do you have?" | not a plain add | model |
+
+Three of those rows were added after watching a real session, and each was the
+model saying something untrue about state it had not changed:
+
+- **"hi" returned 38 items.** Not a model fault — `searchMenu` matched raw
+  substrings, and "c**hi**cken" contains "hi", so a greeting scored against
+  every chicken row. Matching is anchored to word boundaries now, which also
+  stops "ice" reaching "Spice". Greetings are recognised as chatter besides.
+- **The read-back invented a line.** "you have 4 piece Sweet N' Spicy Honey BBQ
+  Glazed Tenders for $3.89 and 1 Hamburger for $5.49. Your total is $9.38" —
+  over a cart holding one Hamburger and totalling $6.00. The read-back is the
+  moment a customer decides whether to pay, so it is now read from the order.
+- **"Start over" did not start over.** The model answered "Sure thing! Let's
+  start over" and called nothing; the previous order survived and the next item
+  joined it. A cheerful false confirmation is the worst outcome available here,
+  because the person stops checking.
 
 "Two burgers" is not a language problem; it is a lookup against a 71-row table. Doing it in
 ordinary code makes the common case exact, instant and identical every time, and leaves the

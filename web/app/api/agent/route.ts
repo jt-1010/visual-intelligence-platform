@@ -12,7 +12,7 @@ import { activeBackend, getModel } from '@/lib/agent/model';
 import { SYSTEM_PROMPT } from '@/lib/agent/prompt';
 import { buildTools } from '@/lib/agent/tools';
 import { resolveIntent } from '@/lib/agent/intent';
-import { addToCart, formatMoney, getCart } from '@/lib/agent/cart';
+import { addToCart, clearCart, formatMoney, getCart } from '@/lib/agent/cart';
 
 export const maxDuration = 30;
 
@@ -99,7 +99,24 @@ async function respondDeterministically(
       writer.write({ type: 'start' });
       writer.write({ type: 'start-step' });
 
-      if (intent.kind === 'choose') {
+      if (intent.kind === 'clear') {
+        await clearCart(sessionId);
+        say(writer, 'Cleared. What would you like?');
+      } else if (intent.kind === 'readback') {
+        const cart = await getCart(sessionId);
+        if (cart.lines.length === 0) {
+          say(writer, 'There is nothing in your order yet. What would you like?');
+        } else {
+          const lines = cart.lines.map(
+            (l) => `${l.qty} ${l.name} ${formatMoney(l.lineTotalCents)}`,
+          );
+          say(
+            writer,
+            `You have ${lines.join(', ')}. Your total is ${formatMoney(cart.totalCents)}. ` +
+              `Is that right?`,
+          );
+        }
+      } else if (intent.kind === 'choose') {
         // Emitted as an add_to_cart result so the UI renders the same choice
         // buttons it would for a tool call. Nothing is written to the order.
         const callId = `local-${Date.now()}`;

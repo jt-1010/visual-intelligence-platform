@@ -30,8 +30,35 @@ export type ResolvedItem = { item: MenuMatch; qty: number };
 
 export type Intent =
   | { kind: 'none' }
+  | { kind: 'readback' }
+  | { kind: 'clear' }
   | { kind: 'add'; items: ResolvedItem[] }
   | { kind: 'choose'; query: string; qty: number; options: MenuMatch[]; totalMatches: number };
+
+/**
+ * Asking what is in the order, which must be answered from the order.
+ *
+ * Handed "read back my order", the model replied: "you have 4 piece Sweet N'
+ * Spicy Honey BBQ Glazed Tenders for $3.89 and 1 Hamburger for $5.49. Your
+ * total is $9.38." The cart held one Hamburger and totalled $6.00. It had
+ * invented a line item it never added, then totalled its own invention -- and
+ * the read-back is the exact moment a customer decides whether to pay.
+ */
+const READ_BACK = [
+  'read back',
+  'read it back',
+  "that's everything",
+  'that is everything',
+  "that's all",
+  'that is all',
+  "that's it",
+  'that is it',
+  'my order',
+  'my total',
+  'confirm my order',
+  "i'm done",
+  'im done',
+];
 
 const NUMBER_WORDS: Record<string, number> = {
   a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5,
@@ -45,12 +72,39 @@ const NUMBER_WORDS: Record<string, number> = {
  * would be answered with "which fries?" -- turning a deletion into an offer to
  * add one. Anything here is handed to the model untouched.
  */
+const START_OVER = [
+  'start over',
+  'cancel everything',
+  'clear my order',
+  'clear everything',
+  'empty my order',
+  'scrap it',
+  'start again',
+];
+
 const NOT_A_PLAIN_ADD = [
   'remove', 'delete', 'cancel', 'clear', 'start over', 'take off', 'instead',
-  'actually', 'change', 'without', 'no ', 'not ', 'what', 'which', 'how much',
-  'how many', 'do you have', 'confirm', 'done', 'that is all', "that's all",
-  'yes', 'yeah', 'no', 'thanks', 'thank you', 'help',
+  'actually', 'change', 'without', 'what', 'which', 'how much',
+  'how many', 'do you have', 'confirm', 'done',
+  'yes', 'yeah', 'no', 'not', 'nope', 'thanks', 'thank you', 'help',
+  // Greetings. Someone saying hello is not ordering anything yet, and the
+  // terminal answering "we have 38 of those" to "hi" is the exact failure this
+  // list exists to prevent.
+  'hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening',
 ];
+
+/**
+ * Word-boundary match, not substring.
+ *
+ * This list is checked against free text, so plain `includes` misfires in both
+ * directions: "no" matched inside "nuggets" and would have refused a real
+ * order, while the trailing-space hacks ("no ", "not ") that worked around it
+ * failed whenever the word ended the sentence.
+ */
+function mentions(text: string, phrase: string): boolean {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(text);
+}
 
 /** Strip a leading quantity. Returns the count and the rest of the phrase. */
 function splitQuantity(segment: string): { qty: number; phrase: string } {
@@ -79,8 +133,23 @@ export async function resolveIntent(rawText: string): Promise<Intent> {
 
   const lower = text.toLowerCase();
 
+  /*
+    Starting over is destructive, so it is done rather than described. Asked to
+    cancel everything the model answered "Sure thing! Let's start over" and
+    called nothing; the previous order was still there, and the next thing added
+    joined it. A cheerful false confirmation is the worst outcome here, because
+    the person stops checking.
+  */
+  if (START_OVER.some((p) => lower.includes(p))) return { kind: 'clear' };
+
+  // After START_OVER, because "clear my order" contains "my order" and would
+  // otherwise be read back instead of cleared. Before NOT_A_PLAIN_ADD, because
+  // "confirm my order" contains "confirm" and the one answer that must come
+  // from the database would go to the model.
+  if (READ_BACK.some((p) => lower.includes(p))) return { kind: 'readback' };
+
   // Conversation, corrections and questions belong to the model.
-  if (NOT_A_PLAIN_ADD.some((w) => lower.includes(w))) return { kind: 'none' };
+  if (NOT_A_PLAIN_ADD.some((w) => mentions(lower, w))) return { kind: 'none' };
   if (text.includes('?')) return { kind: 'none' };
   if (text.split(/\s+/).length > 12) return { kind: 'none' };
 
