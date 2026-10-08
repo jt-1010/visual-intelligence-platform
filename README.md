@@ -73,6 +73,7 @@ separate problem, and the one most likely to make a working model look broken â€
 | Doc | What |
 |---|---|
 | [docs/development.md](docs/development.md) | Running it locally |
+| [docs/research.md](docs/research.md) | **How to make the models smarter, with citations â€” and why our 88.6% is not comparable to published results** |
 | [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) | **What is built, the real numbers, and what is not done** |
 | [docs/datasets.md](docs/datasets.md) | **Which sign language datasets exist and which we use** |
 | [docs/training.md](docs/training.md) | **What we train, on what data, with what settings** |
