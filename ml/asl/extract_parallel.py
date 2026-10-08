@@ -180,6 +180,11 @@ def main() -> None:
     ap.add_argument("--limit", type=int, help="first N clips only (smoke test)")
     ap.add_argument("--vocabulary", action="store_true", help="ordering vocabulary only")
     ap.add_argument("--chunk", type=int, default=250, help="clips per shard")
+    ap.add_argument(
+        "--resume",
+        action="store_true",
+        help="keep shards already on disk and extract only what is missing",
+    )
     args = ap.parse_args()
 
     rows = load_index()
@@ -200,13 +205,30 @@ def main() -> None:
         sys.exit("Nothing to extract.")
 
     SHARDS.mkdir(parents=True, exist_ok=True)
-    for old in SHARDS.glob("shard_*.npz"):
-        old.unlink()
 
     chunks = [
         (i, rows[start : start + args.chunk])
         for i, start in enumerate(range(0, len(rows), args.chunk))
     ]
+
+    # Extracting the full corpus takes hours, and the original behaviour was to
+    # delete every shard on startup -- so a run that died at hour three threw
+    # away three hours of work and began again. --resume keeps what is on disk
+    # and processes only the shards that are missing.
+    if args.resume:
+        done = {int(p.stem.split("_")[1]) for p in SHARDS.glob("shard_*.npz")}
+        before = len(chunks)
+        chunks = [c for c in chunks if c[0] not in done]
+        print(f"  resuming: {before - len(chunks)} shards already on disk")
+    else:
+        for old in SHARDS.glob("shard_*.npz"):
+            old.unlink()
+
+    if not chunks:
+        print("  nothing left to extract")
+        merge(args.out)
+        return
+
     print(f"  {len(chunks)} shards of ~{args.chunk}, {args.workers} workers\n")
 
     t0 = time.time()
