@@ -20,6 +20,7 @@ type SpeechRecognitionLike = {
   start(): void;
   stop(): void;
   abort(): void;
+  onstart: (() => void) | null;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
@@ -119,10 +120,35 @@ export function useSpeech() {
   return { speakStreaming, flush, reset, cancel, speaking, supported };
 }
 
-export function useSpeechRecognition(onTranscript: (text: string) => void) {
+/**
+ * Always-on listening, with the microphone closed while the terminal talks.
+ *
+ * `enabled` is the whole interface. Pressing a button before speaking is a
+ * barrier for exactly the people this terminal is for -- someone with limited
+ * motor control, or a blind customer who cannot find the button -- so the
+ * caller keeps this true and simply talks.
+ *
+ * The hard part is that an open microphone hears the terminal's own voice and
+ * transcribes it back as a customer utterance, which answers itself, which it
+ * then hears again. The caller closes the microphone while speech is playing by
+ * passing `enabled: false`, and this hook makes that cheap: the recogniser is
+ * stopped and restarted rather than rebuilt, so no audio is captured from the
+ * speakers at all. Browser echo cancellation is not enough on its own, because
+ * laptop speakers and microphone share a chassis.
+ *
+ * Chrome also ends recognition on its own every few seconds of silence, so a
+ * session that is meant to stay open has to be restarted each time it stops.
+ */
+export function useSpeechRecognition(
+  onTranscript: (text: string) => void,
+  enabled = false,
+) {
   const [listening, setListening] = useState(false);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const onTranscriptRef = useRef(onTranscript);
+  // Read by handlers that outlive the render they were created in.
+  const enabledRef = useRef(enabled);
+  const restartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Written after render, never during it: a ref mutated mid-render can be
   // read by a concurrent render that then sees a stale callback.
@@ -142,8 +168,14 @@ export function useSpeechRecognition(onTranscript: (text: string) => void) {
 
     const rec = new Ctor();
     rec.lang = 'en-US';
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = false;
+
+    // Listening state comes from the recogniser, not from our intent to start
+    // it: start() can throw, be refused, or end on its own a moment later, and
+    // a dot that says "listening" while the microphone is shut is worse than
+    // no dot at all.
+    rec.onstart = () => setListening(true);
 
     rec.onresult = (e) => {
       const last = e.results[e.results.length - 1];
@@ -151,31 +183,54 @@ export function useSpeechRecognition(onTranscript: (text: string) => void) {
       if (text) onTranscriptRef.current(text);
     };
     rec.onerror = (e) => {
-      // 'no-speech' and 'aborted' are routine, not failures worth logging.
+      // 'no-speech' and 'aborted' are routine in a session held open all day.
       if (e.error !== 'no-speech' && e.error !== 'aborted') {
         console.warn('[speech] recognition error:', e.error);
       }
     };
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      // Chrome ends the session on its own after a stretch of silence. If
+      // listening is still wanted, open it again -- but after a beat, so a
+      // recogniser that is failing immediately cannot spin.
+      if (!enabledRef.current) return;
+      if (restartTimer.current) clearTimeout(restartTimer.current);
+      restartTimer.current = setTimeout(() => {
+        if (!enabledRef.current) return;
+        try {
+          rec.start();
+        } catch {
+          // Already running: harmless.
+        }
+      }, 400);
+    };
 
     recRef.current = rec;
-    return () => rec.abort();
+    return () => {
+      enabledRef.current = false;
+      if (restartTimer.current) clearTimeout(restartTimer.current);
+      rec.abort();
+    };
   }, []);
 
-  const start = useCallback(() => {
-    if (!recRef.current || listening) return;
-    try {
-      recRef.current.start();
-      setListening(true);
-    } catch {
-      // start() throws if already running; harmless.
+  // Open and close the microphone as the caller asks. This runs whenever
+  // `enabled` flips, which is how the terminal stays deaf while it is talking.
+  useEffect(() => {
+    enabledRef.current = enabled;
+    const rec = recRef.current;
+    if (!rec) return;
+
+    if (enabled) {
+      try {
+        rec.start();
+      } catch {
+        // Already running.
+      }
+    } else {
+      if (restartTimer.current) clearTimeout(restartTimer.current);
+      rec.stop();
     }
-  }, [listening]);
+  }, [enabled]);
 
-  const stop = useCallback(() => {
-    recRef.current?.stop();
-    setListening(false);
-  }, []);
-
-  return { start, stop, listening, supported };
+  return { listening, supported };
 }

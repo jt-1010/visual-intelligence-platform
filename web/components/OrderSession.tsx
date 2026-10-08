@@ -59,11 +59,18 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const [showOverlay, setShowOverlay] = useState(tuning);
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
-  // Speech output is off by default. The work right now is sign recognition,
-  // and a terminal that talks over you while you are trying to sign at it is a
-  // distraction from the thing being tested. The toggle stays: the spoken
-  // channel is how a blind customer uses this, so it is switched off, not gone.
-  const [muted, setMuted] = useState(true);
+  /*
+    The terminal speaks, and listens, without being asked to.
+
+    Pressing a button before you may talk is a barrier for the people this is
+    built for: someone with limited motor control, or a blind customer who
+    cannot find the button. So the speaker is on and the microphone is open,
+    and a customer simply talks -- or signs, which runs at the same time
+    through a different channel entirely.
+
+    The toggle stays for the room this stands in, not for the customer.
+  */
+  const [muted, setMuted] = useState(false);
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/agent', body: { sessionId } }),
@@ -124,6 +131,16 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   );
 
   // --- Speech input --------------------------------------------------------
+  /*
+    The microphone is open except while the terminal is talking or thinking.
+
+    An open microphone hears the terminal's own voice through the laptop
+    speakers and sends it back as a customer utterance, which answers itself,
+    which it hears again. Closing it while `speaking` is the cure, and closing
+    it while `busy` keeps room noise out of the gap between question and reply.
+  */
+  const answering = status === 'submitted' || status === 'streaming';
+  const speechHandsFree = !muted && !speech.speaking && !answering;
   const recognition = useSpeechRecognition(
     useCallback(
       (text: string) => {
@@ -131,6 +148,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
       },
       [send],
     ),
+    speechHandsFree,
   );
 
   // --- Camera frames -------------------------------------------------------
@@ -284,8 +302,6 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
 
         <Composer
           onSend={(text) => send(tagged('text', text))}
-          onSpeak={recognition.start}
-          onStopListening={recognition.stop}
           listening={recognition.listening}
           speechSupported={recognition.supported}
           disabled={busy}

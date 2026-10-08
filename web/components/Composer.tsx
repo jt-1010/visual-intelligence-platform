@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 
 type Props = {
   onSend: (text: string) => void;
-  onSpeak: () => void;
-  onStopListening: () => void;
   listening: boolean;
   speechSupported: boolean;
   disabled: boolean;
@@ -19,14 +17,7 @@ type Props = {
  * acquired speech impairment -- still has to be able to order, and until the
  * sign model covers a wider vocabulary that is a lot of people.
  */
-export function Composer({
-  onSend,
-  onSpeak,
-  onStopListening,
-  listening,
-  speechSupported,
-  disabled,
-}: Props) {
+export function Composer({ onSend, listening, speechSupported, disabled }: Props) {
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,22 +63,33 @@ export function Composer({
         className="max-h-32 min-h-14 flex-1 resize-none rounded-control bg-transparent px-4 py-3.5 text-[1.125rem] leading-snug text-ink placeholder:text-ink-faint focus:outline-none disabled:opacity-50"
       />
 
-      <button
-        type="button"
-        onClick={listening ? onStopListening : onSpeak}
-        disabled={!speechSupported || disabled}
-        aria-pressed={listening}
-        title={speechSupported ? 'Order by voice' : 'Voice ordering is not available in this browser'}
-        className={[
-          'min-h-14 shrink-0 rounded-control border px-5 text-[1.0625rem] font-bold transition',
-          'disabled:cursor-not-allowed disabled:opacity-40',
-          listening
-            ? 'border-attention bg-attention-soft text-attention'
-            : 'border-line-strong text-ink hover:bg-sunk',
-        ].join(' ')}
-      >
-        {listening ? 'Listening…' : 'Speak'}
-      </button>
+      {/*
+        A readout, not a button. The microphone is open on its own, so there is
+        nothing to press -- but a person has to be able to tell whether they are
+        being heard, and whether this terminal is listening to the room, which
+        they are entitled to know without having to ask.
+      */}
+      {speechSupported && (
+        <p
+          aria-live="polite"
+          className={[
+            'flex min-h-14 shrink-0 items-center gap-2.5 rounded-control border px-5',
+            'text-[1.0625rem] font-bold',
+            listening
+              ? 'border-action bg-action-soft text-action'
+              : 'border-line text-ink-faint',
+          ].join(' ')}
+        >
+          <span
+            aria-hidden="true"
+            className={[
+              'inline-block h-2.5 w-2.5 rounded-full',
+              listening ? 'bg-action' : 'bg-line-strong',
+            ].join(' ')}
+          />
+          {listening ? 'Listening' : 'Mic off'}
+        </p>
+      )}
 
       <button
         type="submit"
