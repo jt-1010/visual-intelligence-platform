@@ -116,13 +116,31 @@ def worker(task: tuple[int, list[dict]]) -> tuple[int, int, int]:
         extractor.close()
 
     if X:
+        # Write to a temporary name and rename into place.
+        #
+        # --resume decides a shard is done by seeing its file, so a shard that
+        # was interrupted PART WAY THROUGH WRITING would be skipped for ever and
+        # silently contribute short or unreadable data to the merge. The window
+        # is about a second out of twenty-five minutes, but a Ctrl-C hits ten
+        # workers at once and the failure is invisible when it happens.
+        #
+        # os.replace is atomic on Windows and POSIX alike: the final name either
+        # does not exist or is a complete file. A leftover .tmp is ignored and
+        # the shard is simply done again.
+        # The temp name must end in .npz, because savez_compressed appends the
+        # extension when it is missing and the rename would then look for a file
+        # that does not exist. It must also NOT match the shard_*.npz glob, or
+        # --resume would count a half-written file as a finished shard.
+        final = SHARDS / f"shard_{shard_id:04d}.npz"
+        tmp = SHARDS / f"writing_{shard_id:04d}.npz"
         np.savez_compressed(
-            SHARDS / f"shard_{shard_id:04d}.npz",
+            tmp,
             X=np.stack(X),
             y=np.array(y),
             signers=np.array(signers),
             splits=np.array(splits),
         )
+        os.replace(tmp, final)
     return shard_id, len(X), skipped
 
 
@@ -216,10 +234,32 @@ def main() -> None:
     # away three hours of work and began again. --resume keeps what is on disk
     # and processes only the shards that are missing.
     if args.resume:
-        done = {int(p.stem.split("_")[1]) for p in SHARDS.glob("shard_*.npz")}
+        # Half-written files from an older build, or from an interrupted run
+        # before the atomic rename existed, are cleared rather than trusted.
+        for leftover in SHARDS.glob("writing_*.npz"):
+            leftover.unlink()
+
+        done = set()
+        corrupt = 0
+        for p in sorted(SHARDS.glob("shard_*.npz")):
+            try:
+                # Opening the archive reads its directory, which is enough to
+                # tell a complete file from a truncated one, and costs far less
+                # than extracting a shard again for nothing.
+                with np.load(p) as z:
+                    if "X" in z.files:
+                        done.add(int(p.stem.split("_")[1]))
+                        continue
+            except Exception:
+                pass
+            corrupt += 1
+            p.unlink()
+
         before = len(chunks)
         chunks = [c for c in chunks if c[0] not in done]
-        print(f"  resuming: {before - len(chunks)} shards already on disk")
+        print(f"  resuming: {len(done)} shards already on disk")
+        if corrupt:
+            print(f"  discarded {corrupt} unreadable shard(s); they will be redone")
     else:
         for old in SHARDS.glob("shard_*.npz"):
             old.unlink()
