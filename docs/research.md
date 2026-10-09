@@ -1,8 +1,45 @@
 # Research notes — making the models smarter
 
-Written 2026-10-08. Everything here is either measured in this repo or cited to a
+Written 2026-10-08, **results added 2026-10-09**. Everything here is either measured in this repo or cited to a
 paper. Where a number is ours and a number is theirs, both are labelled, because
 the most useful finding below is that one of our numbers has been read wrongly.
+
+---
+
+## 0. RESULTS — full-corpus pretraining, measured
+
+Extraction finished 2026-10-09: **83,398 clips, 2,731 signs, 52 signers**, split
+by signer with zero overlap. Pretraining then fine-tuning was run on it. All
+rows below use the SAME fine-tune split and seed, so only the backbone differs.
+
+| Model | 64-sign top-1 | Notes |
+|---|---|---|
+| From scratch | **89.8%** | the previous approach, reproduced |
+| Pretrained, naive split | ~~99.0%~~ | **invalid — see below** |
+| **Pretrained, clean split** | **93.4%** | **+3.6 points, reportable** |
+
+**The 99.0% was leaked and must not be quoted.** Pretraining and fine-tuning
+each chose their own validation signers, and because they run over different
+subsets of the corpus those choices differed: **13 of the fine-tune's 16
+held-out signers sat in the pretraining TRAINING set.** The backbone had
+already watched those people sign. Re-pretraining with those 16 signers forced
+out (`--holdout-signers`) gives 93.4%, and that is the number that is actually
+signer-independent. The leak was worth 5.6 points.
+
+The same correction applies to the backbone itself: 77.0% over 2,731 signs on
+the naive split, **72.1% on the clean one**.
+
+### Two further findings
+
+**The confidence gate now works.** It was previously described here as barely
+functional. Measured on the clean model, the top1−top2 margin separates right
+from wrong by **+0.591**, and a 0.6 threshold passes 78% of predictions while
+blocking **90% of the wrong ones**. That is now worth enabling in the terminal.
+
+**The fairness gap did not close.** Per-signer accuracy still spans 0.33
+(0.67–1.00); among signers with more than 40 clips it is 0.80–0.98. Pretraining
+raised the mean without evening out who the system works for, which is the
+finding to report, not the average.
 
 ---
 

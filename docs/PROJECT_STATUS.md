@@ -4,7 +4,7 @@
 **Course:** CMPE 295A (project) · CMPE 294 (technical writing)
 **Advisor:** Professor Charan Bhaskar
 **Team:** Jeremy Tung, Raymond Li, Sophia Atendido, Jack Liang
-**Status as of:** 2026-10-05
+**Status as of:** 2026-10-09
 
 > This document exists to give an AI note-taker (or a reader) complete context
 > on what has been built, what the numbers actually are, and what is not done
@@ -23,9 +23,12 @@ come from a database and can never be invented by the model. The system also
 accepts speech, typing and touch, so it serves Deaf, hard-of-hearing,
 speech-impaired, blind and non-disabled customers through the same interface.
 
-**Current headline result: 88.6% signer-independent accuracy across a
+**Current headline result: 93.4% signer-independent accuracy across a
 64-sign ordering vocabulary, deployed and running live at ~4 ms per
-prediction.**
+prediction.** Up from 89.8% by pretraining on the full 83,398-clip ASL Citizen
+corpus and fine-tuning the ordering head. Quote 93.4%, not the 99.0% an earlier
+run produced -- that run's backbone had seen 13 of the 16 validation signers and
+was not signer-independent. See docs/research.md.
 
 ---
 
@@ -226,7 +229,6 @@ State these plainly; they are the roadmap.
 | **The local model cannot be trusted to order** | `qwen2.5:7b-instruct` replies fluently and calls tools unreliably — for the same request it has called `add_to_cart`, called `search_menu`, and called nothing at all while claiming *"Added two Burgers, $9.98"* with the order empty and no such price on the menu. **Mitigated, not solved:** plain orders are now resolved against the database before the model is consulted (`lib/agent/intent.ts`), so the common path is exact and never reaches it. Conversational turns still do, and anything the model says about prices on those turns is unverified. This is the gap the QLoRA fine-tune (M5) exists to close. |
 | **QLoRA fine-tune not started** | The plan is to fine-tune Qwen2.5-3B on synthetic ordering dialogues and benchmark it against a hosted model. Harness is written; no model yet. |
 | **Benchmark never run** | 10 scenarios across rules / Qwen / gateway backends exist in code but have produced no results, because of the item above. |
-| **Full-corpus pretraining not done** | Estimated 33 hours single-threaded. Would likely lift accuracy above 88.6%. |
 | **Recommender not trained** | Upsells currently use a hand-written rules baseline. |
 | **4 signs still need recording** | CHICKEN, NUGGET, FIVE, TEN. |
 | **Never tested by a Deaf signer** | The most important gap. All results are from replayed dataset clips. |

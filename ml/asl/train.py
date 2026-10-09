@@ -74,14 +74,41 @@ def load(name: str, merge: bool = False):
     return X, y, signers, labels
 
 
-def split_by_signer(signers: np.ndarray, y: np.ndarray, val_frac: float, seed: int):
+def split_by_signer(
+    signers: np.ndarray,
+    y: np.ndarray,
+    val_frac: float,
+    seed: int,
+    holdout: list[str] | None = None,
+):
     """Hold out whole signers, not random clips.
 
     Signers are assigned greedily smallest-first so the validation set lands
     near the requested size without splitting anyone across both sides.
+
+    `holdout` forces an exact set of signers into validation, which is what
+    makes pretraining honest. Pretraining and fine-tuning run over different
+    subsets of the corpus, so each picking its own validation signers put 13 of
+    the fine-tune's 16 held-out signers inside the pretraining TRAINING set --
+    the backbone had already watched those people sign, and the fine-tuned
+    model scored 99.0% on them. That number was not signer-independent and
+    reporting it as one would have been wrong. Pass the fine-tune's validation
+    signers here when pretraining and the backbone never sees them.
     """
     rng = np.random.default_rng(seed)
     unique = np.unique(signers)
+
+    if holdout:
+        val_signers = [s for s in unique if s in set(holdout)]
+        missing = set(holdout) - set(val_signers)
+        if missing:
+            print(f"  note: {len(missing)} held-out signer(s) absent from this data")
+        val_mask = np.isin(signers, val_signers)
+        train_idx = np.flatnonzero(~val_mask)
+        val_idx = np.flatnonzero(val_mask)
+        print(f"  train: {len(train_idx)} clips from {len(unique) - len(val_signers)} signers")
+        print(f"  val  : {len(val_idx)} clips from {len(val_signers)} signers (forced holdout)")
+        return train_idx, val_idx
 
     if len(unique) < 2:
         # Single-signer data (our own recordings, before we have several
@@ -187,7 +214,8 @@ def run(args) -> None:
     counts = np.bincount(y, minlength=len(labels))
     print(f"  clips per class: min {counts.min()}, median {int(np.median(counts))}, max {counts.max()}")
 
-    train_idx, val_idx = split_by_signer(signers, y, args.val_frac, args.seed)
+    holdout = args.holdout_signers.split(',') if args.holdout_signers else None
+    train_idx, val_idx = split_by_signer(signers, y, args.val_frac, args.seed, holdout)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"  device: {device}")
@@ -289,6 +317,10 @@ def main() -> None:
     ap.add_argument("--merge-variants", action="store_true",
                     help="treat eat1/eat2 as one sign (recommended)")
     ap.add_argument("--init-from", help="checkpoint to load a pretrained backbone from")
+    ap.add_argument("--holdout-signers",
+                    help="comma-separated signer ids forced into validation; use the "
+                         "fine-tune's validation signers when pretraining so the "
+                         "backbone never sees them")
     ap.add_argument("--freeze-epochs", type=int, default=0,
                     help="train only the head for this many epochs first")
     ap.add_argument("--out", default="sign_classifier",
