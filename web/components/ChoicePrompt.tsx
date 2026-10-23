@@ -41,10 +41,11 @@ export function ChoicePrompt({ choice, onPick, disabled }: Props) {
       */}
       <p className="text-[1.0625rem] font-bold text-attention">
         {choice.quantity > 1 ? `Which one? You asked for ${choice.quantity}.` : 'Which one?'}
+        <span className="ml-2 font-normal text-ink-soft">Sign the number or tap it.</span>
       </p>
 
       <ul className="mt-3 flex flex-wrap gap-2">
-        {choice.options.map((option) => (
+        {choice.options.map((option, i) => (
           <li key={option.name}>
             <button
               type="button"
@@ -52,6 +53,9 @@ export function ChoicePrompt({ choice, onPick, disabled }: Props) {
               disabled={disabled}
               className="min-h-12 rounded-control border border-line-strong bg-card px-4 text-left text-[1rem] font-bold text-ink transition hover:border-action hover:bg-action-soft disabled:cursor-not-allowed disabled:opacity-40"
             >
+              <span className="tnum mr-2 inline-flex size-7 items-center justify-center rounded-full bg-action text-[0.9375rem] text-on-action">
+                {i + 1}
+              </span>
               {option.name}
               <span className="tnum ml-2 font-normal text-ink-soft">{option.price}</span>
             </button>
@@ -61,7 +65,7 @@ export function ChoicePrompt({ choice, onPick, disabled }: Props) {
 
       {more > 0 && (
         <p className="mt-2.5 text-[0.9375rem] text-ink-soft">
-          {more} more on the menu — scroll it and tap any item.
+          {more} more on the menu. Open Menu to see them all.
         </p>
       )}
     </section>

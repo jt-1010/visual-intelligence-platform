@@ -47,7 +47,7 @@ export function CartPanel({ cart, onConfirm, onClear, busy }: Props) {
       aria-label="Your order"
       // flex-1, not h-full: this panel now shares its column with the menu, and
       // h-full resolved to the whole column and squeezed the menu to nothing.
-      className="flex min-h-0 flex-1 flex-col rounded-panel border border-line bg-card"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-card"
     >
       <div className="flex items-baseline justify-between border-b border-line px-6 py-5">
         <h2 className="text-[1.375rem] font-bold tracking-[-0.01em]">Your order</h2>
@@ -117,7 +117,7 @@ export function CartPanel({ cart, onConfirm, onClear, busy }: Props) {
           type="button"
           onClick={onConfirm}
           disabled={empty || busy}
-          className="mt-5 min-h-14 w-full rounded-control bg-action px-6 text-[1.125rem] font-bold text-white transition hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-ink-faint"
+          className="mt-5 min-h-14 w-full rounded-control bg-action px-6 text-[1.125rem] font-bold text-on-action transition hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-ink-faint"
         >
           {empty ? 'Add something first' : 'Confirm order'}
         </button>

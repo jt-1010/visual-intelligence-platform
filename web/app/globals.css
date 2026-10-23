@@ -14,24 +14,34 @@
 
 @theme {
   /* --- Light: the default --- */
-  --color-paper: #faf9f7;
+  --color-paper: #f6f5f2;
   --color-card: #ffffff;
-  --color-sunk: #f2f0ec;
-  --color-ink: #171614;
-  --color-ink-soft: #5c5953;
-  --color-ink-faint: #8a867e;
-  --color-line: #e4e1db;
-  --color-line-strong: #cfcbc3;
+  --color-sunk: #eceae5;
+  --color-ink: #121110;
+  /* Secondary and faint text are darker than they look like they need to be:
+     both clear WCAG AA (4.5:1) on white and on the page, so nothing on a
+     kiosk is grey-on-grey in bright light. */
+  --color-ink-soft: #46433e;
+  --color-ink-faint: #66625b;
+  --color-line: #d9d5ce;
+  --color-line-strong: #a9a49b;
 
   /* Deep teal. Reads calm and legible rather than alarming, and clears
-     WCAG AA on white at every size we use it. */
-  --color-action: #0b6e5f;
-  --color-action-hover: #095a4e;
-  --color-action-soft: #e6f2ef;
+     WCAG AA with white text and on white at every size we use it. */
+  --color-action: #075e51;
+  --color-action-hover: #054a40;
+  --color-action-soft: #e3f0ed;
+  /* Text on an action-coloured button. */
+  --color-on-action: #ffffff;
 
-  /* Warm amber for "I am listening to you right now". */
-  --color-attention: #a8500a;
-  --color-attention-soft: #fdf1e5;
+  /* Questions and "I am listening": dark amber, distinct from the action
+     colour so a prompt never reads as a button. */
+  --color-attention: #8f4207;
+  --color-attention-soft: #fbefe3;
+
+  /* Signed words share the action colour; one accent is enough. */
+  --color-sign: #075e51;
+  --color-sign-soft: #e3f0ed;
 
   --color-danger: #9a2515;
   --color-danger-soft: #fdecea;
@@ -47,21 +57,25 @@
 /* --- Dark, for viewers who ask for it ----------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --color-paper: #15181a;
-    --color-card: #1d2124;
-    --color-sunk: #121517;
-    --color-ink: #f3f1ee;
-    --color-ink-soft: #b3b0aa;
-    --color-ink-faint: #85827c;
-    --color-line: #2e3337;
-    --color-line-strong: #3f4549;
+    --color-paper: #121416;
+    --color-card: #1b1e21;
+    --color-sunk: #0e1012;
+    --color-ink: #f7f5f2;
+    --color-ink-soft: #cdcac4;
+    --color-ink-faint: #a5a19a;
+    --color-line: #33383c;
+    --color-line-strong: #5a6066;
 
-    --color-action: #5ecfb8;
-    --color-action-hover: #7cdcc8;
-    --color-action-soft: #17312c;
+    --color-action: #6ad8c1;
+    --color-action-hover: #8ae3d1;
+    --color-action-soft: #163430;
+    --color-on-action: #0e1012;
 
-    --color-attention: #e9a165;
-    --color-attention-soft: #33241a;
+    --color-attention: #f0ac72;
+    --color-attention-soft: #35261a;
+
+    --color-sign: #6ad8c1;
+    --color-sign-soft: #163430;
 
     --color-danger: #f08b7c;
     --color-danger-soft: #3a1f1c;
@@ -69,19 +83,22 @@
 }
 
 :root[data-theme='dark'] {
-  --color-paper: #15181a;
-  --color-card: #1d2124;
-  --color-sunk: #121517;
-  --color-ink: #f3f1ee;
-  --color-ink-soft: #b3b0aa;
-  --color-ink-faint: #85827c;
-  --color-line: #2e3337;
-  --color-line-strong: #3f4549;
-  --color-action: #5ecfb8;
-  --color-action-hover: #7cdcc8;
-  --color-action-soft: #17312c;
-  --color-attention: #e9a165;
-  --color-attention-soft: #33241a;
+  --color-paper: #121416;
+  --color-card: #1b1e21;
+  --color-sunk: #0e1012;
+  --color-ink: #f7f5f2;
+  --color-ink-soft: #cdcac4;
+  --color-ink-faint: #a5a19a;
+  --color-line: #33383c;
+  --color-line-strong: #5a6066;
+  --color-action: #6ad8c1;
+  --color-action-hover: #8ae3d1;
+  --color-action-soft: #163430;
+  --color-on-action: #0e1012;
+  --color-attention: #f0ac72;
+  --color-attention-soft: #35261a;
+  --color-sign: #6ad8c1;
+  --color-sign-soft: #163430;
   --color-danger: #f08b7c;
   --color-danger-soft: #3a1f1c;
 }

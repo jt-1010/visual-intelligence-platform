@@ -237,7 +237,9 @@ export type AddResult =
 const NAMES_ONE_ITEM = 95;
 
 /** How many choices to offer. More than this is a list, not a question. */
-const MAX_OPTIONS = 5;
+// Four, not five: options are picked by signing their number, and the sign
+// classifier has no FIVE. Every option on screen must be signable.
+const MAX_OPTIONS = 4;
 
 export type Resolution =
   | { kind: 'none' }

@@ -64,12 +64,11 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
         one reply about tender sizes without scrolling, which is no use to
         someone who reads this instead of hearing it.
 
-        pb reserves the bottom-right corner the camera is inset into, so text
-        never slides underneath it.
+        The camera now has its own column, so no corner needs reserving.
       */
       className={[
         'flex min-h-0 flex-1 flex-col overflow-y-auto rounded-panel border border-line',
-        'bg-card px-8 py-7 pb-[12.5rem] shadow-[0_1px_2px_rgba(0,0,0,0.04)]',
+        'bg-card px-8 py-7',
       ].join(' ')}
     >
       {empty ? (
@@ -90,9 +89,9 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
           {turns.map((turn) => {
             if (turn.role === 'customer') {
               return (
-                <div key={turn.id}>
+                <div key={turn.id} className="flex flex-col items-end">
                   <p className="text-[0.9375rem] text-ink-faint">{turn.label}</p>
-                  <p className="mt-1 max-w-[68ch] text-[1.1875rem] leading-snug text-ink-soft">
+                  <p className="mt-1 max-w-[60ch] rounded-panel rounded-br-sm border border-line bg-sunk px-4 py-2.5 text-[1.1875rem] leading-snug text-ink">
                     {turn.text}
                   </p>
                 </div>
@@ -138,7 +137,7 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
                 {glosses.map((gloss, i) => (
                   <span
                     key={`${gloss}-${i}`}
-                    className="rounded-control border border-action bg-action-soft px-3.5 py-1.5 text-[1.25rem] font-bold tracking-[-0.01em] text-action"
+                    className="rounded-control border border-sign bg-sign-soft px-3.5 py-1.5 text-[1.25rem] font-bold tracking-[-0.01em] text-sign"
                   >
                     {gloss}
                   </span>
