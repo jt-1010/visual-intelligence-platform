@@ -8,12 +8,24 @@ import { DetectionPanel } from './DetectionPanel';
 import { CaptionPanel } from './CaptionPanel';
 import { CartPanel, type Cart } from './CartPanel';
 import { MenuGrid, type MenuItem } from './MenuGrid';
+import { MenuDialog } from './MenuDialog';
 import { Composer } from './Composer';
 import { ChoicePrompt } from './ChoicePrompt';
 import { useSignSocket, type SignEvent } from '@/lib/sign/useSignSocket';
 import { useGlossBuffer } from '@/lib/interaction/useGlossBuffer';
 import { useSpeech, useSpeechRecognition } from '@/lib/interaction/useSpeech';
-import { latestReply, pendingChoice, tagged, toTurns } from '@/lib/interaction/transcript';
+import {
+  latestReply,
+  pendingChoice,
+  tagged,
+  toTurns,
+  type PendingChoice,
+} from '@/lib/interaction/transcript';
+
+/** Number signs the classifier knows, for picking a numbered option. */
+const CHOICE_NUMBERS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, six: 6, seven: 7, eight: 8, nine: 9,
+};
 import type { CapturedFrame } from '@/lib/mediapipe/landmarks';
 import {
   DEFAULT_THRESHOLDS,
@@ -59,6 +71,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const [showOverlay, setShowOverlay] = useState(tuning);
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
+  const [menuOpen, setMenuOpen] = useState(false);
   /*
     The terminal speaks, and listens, without being asked to.
 
@@ -111,13 +124,39 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
     [sendMessage, speech],
   );
 
+  const pickChoice = useCallback(
+    (picked: PendingChoice, name: string) =>
+      send(tagged('touch', `${picked.quantity > 1 ? picked.quantity : 'One'} ${name}.`)),
+    [send],
+  );
+
+  // Read inside the sign callback without re-creating the gloss buffer.
+  const choiceRef = useRef(choice);
+  useEffect(() => {
+    choiceRef.current = choice;
+  });
+
   // --- Sign input ----------------------------------------------------------
   const glossBuffer = useGlossBuffer(
     useCallback(
       (glosses: string[]) => {
+        /*
+          While "which one?" is open, a single number sign picks that option.
+          Menu names are far outside the sign vocabulary ("Premium Crispy
+          Chicken Deluxe Sandwich"), but ONE to NINE are all in it, so the
+          options are numbered and the person signs the number.
+        */
+        const open = choiceRef.current;
+        if (open && glosses.length === 1) {
+          const n = CHOICE_NUMBERS[glosses[0].toLowerCase()];
+          if (n !== undefined && n <= open.options.length) {
+            pickChoice(open, open.options[n - 1].name);
+            return;
+          }
+        }
         send(tagged('sign', glosses.join(' ')));
       },
-      [send],
+      [send, pickChoice],
     ),
   );
 
@@ -232,62 +271,20 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   return (
     <div className="flex h-[calc(100dvh-4.5rem)] min-h-0 gap-5">
       {/* ----------------------------------------------------------------
-          You sign AT the camera, so the camera gets the room. Underneath it,
-          only the two things you need while signing: what the terminal just
-          said, and the other ways to say something.
+          Left: the conversation, which is what you read. Right: the camera you
+          sign at, and the order it is building. The menu is a popup, so it
+          takes no room until someone wants to browse.
          ---------------------------------------------------------------- */}
       <main className="flex min-w-0 flex-1 flex-col gap-4">
-        {/* ----------------------------------------------------------------
-            The conversation is the surface, and the camera is inset into its
-            bottom-right corner rather than sitting in its own box above it.
-
-            Two reasons. The words are what you read -- a reply listing tender
-            sizes did not fit in a short strip, and having to scroll a terminal
-            to find out what it just said is no use to someone reading it
-            instead of hearing it. And while you sign you glance at your hands
-            and read in the same place, instead of looking between two panels.
-
-            The panel reserves the corner with padding, so text never runs
-            underneath the camera.
-           ---------------------------------------------------------------- */}
-        {/* flex flex-col, so the panel inside actually fills this box rather
-            than collapsing to the height of its text. */}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           <CaptionPanel turns={turns} glosses={glossBuffer.glosses} thinking={busy} />
-
-          <div className="pointer-events-none absolute bottom-5 right-5 flex w-[18rem] flex-col gap-2 xl:w-[21rem]">
-            <div className="pointer-events-auto aspect-video w-full overflow-hidden rounded-panel shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
-              <CameraStage
-                onFrame={handleFrame}
-                onArrive={handleArrive}
-                onDepart={handleDepart}
-                presence={presence}
-                thresholds={thresholds}
-                showPose={showOverlay}
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMuted((m) => !m);
-                speech.cancel();
-              }}
-              aria-pressed={!muted}
-              className="pointer-events-auto self-end rounded-control border border-line bg-card px-3.5 py-2 text-[0.9375rem] font-bold text-ink-soft transition hover:text-ink"
-            >
-              {muted ? 'Sound off' : 'Sound on'}
-            </button>
-          </div>
         </div>
 
         {choice && (
           <ChoicePrompt
             choice={choice}
             disabled={busy}
-            onPick={(name) =>
-              send(tagged('touch', `${choice.quantity > 1 ? choice.quantity : 'One'} ${name}.`))
-            }
+            onPick={(name) => pickChoice(choice, name)}
           />
         )}
 
@@ -323,26 +320,77 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
         )}
       </main>
 
-      {/* ----------------------------------------------------------------
-          Menu above, order below, both on screen at once.
+      {/* The order gets its own full-height column, between the chat and the
+          camera, so a long order stays readable without scrolling. */}
+      <div className="flex w-[20rem] shrink-0 flex-col xl:w-[24rem]">
+        <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
+      </div>
 
-          These used to share one panel and a toggle. That was wrong in a way
-          that mattered: being asked "which burger?" is the normal shape of this
-          conversation, and answering it meant switching away from the running
-          total to go and look. Worse, a signer whose vocabulary cannot express
-          "Double Quarter Pounder" needs the menu VISIBLE to point at. The total
-          stays pinned at the bottom, which is the number people check most.
-         ---------------------------------------------------------------- */}
-      <div className="flex w-[25rem] shrink-0 flex-col gap-4 xl:w-[29rem]">
-        <section
-          aria-label="Menu"
-          className="flex min-h-0 flex-1 flex-col rounded-panel border border-line bg-card"
-        >
-          <div className="flex items-baseline justify-between border-b border-line px-6 py-4">
-            <h2 className="text-[1.25rem] font-bold tracking-[-0.01em]">Menu</h2>
-            <p className="text-[0.9375rem] text-ink-faint">Tap to add</p>
+      <aside className="flex w-[18rem] shrink-0 flex-col gap-4 xl:w-[22rem]">
+        <section aria-label="Camera" className="flex shrink-0 flex-col gap-2">
+          <div className="aspect-video w-full overflow-hidden rounded-panel border border-line-strong">
+            <CameraStage
+              onFrame={handleFrame}
+              onArrive={handleArrive}
+              onDepart={handleDepart}
+              presence={presence}
+              thresholds={thresholds}
+              showPose={showOverlay}
+            />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+
+          <p className="rounded-panel border border-line bg-card px-4 py-2 text-[0.9375rem] font-bold text-ink-soft">
+            {handsVisible ? 'I can see your hands' : 'Raise your hands to sign'}
+          </p>
+        </section>
+
+        {/* The two controls people reach for most, big enough to find at a glance. */}
+        <div className="flex shrink-0 gap-3">
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className="flex min-h-16 flex-1 items-center justify-center gap-3 rounded-panel bg-action text-[1.375rem] font-bold text-on-action transition hover:bg-action-hover"
+          >
+                        Open menu
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMuted((m) => !m);
+              speech.cancel();
+            }}
+            aria-pressed={muted}
+            aria-label={muted ? 'Unmute' : 'Mute'}
+            className={[
+              'flex min-h-16 w-24 shrink-0 flex-col items-center justify-center rounded-panel border-2 text-[0.9375rem] font-bold transition',
+              muted
+                ? 'border-danger bg-danger-soft text-danger'
+                : 'border-line-strong bg-card text-ink hover:border-ink-soft',
+            ].join(' ')}
+          >
+            <span aria-hidden="true" className="text-[1.5rem] leading-none">{muted ? '🔇' : '🔊'}</span>
+            <span className="mt-1">{muted ? 'Unmute' : 'Mute'}</span>
+          </button>
+        </div>
+
+
+        {/* Fills the rest of the column so it is never empty: the menu, one
+            tap per item. The popup is still there for browsing big. */}
+        <section
+          aria-label="Quick add"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-card"
+        >
+          <div className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-3">
+            <h2 className="text-[1.125rem] font-bold tracking-[-0.01em]">Quick add</h2>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="rounded-control px-1 text-[0.9375rem] font-bold text-action underline-offset-4 hover:underline"
+            >
+              See all
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
             <MenuGrid
               categories={menu}
               disabled={busy}
@@ -350,9 +398,15 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             />
           </div>
         </section>
+      </aside>
 
-        <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
-      </div>
+      <MenuDialog
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        categories={menu}
+        disabled={busy}
+        onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
+      />
     </div>
   );
 }

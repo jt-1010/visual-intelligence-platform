@@ -143,10 +143,12 @@ async function respondDeterministically(
           },
         });
 
-        const names = intent.options.map((o) => `${o.name} ${formatMoney(o.priceCents)}`);
+        const names = intent.options.map(
+          (o, i) => `${i + 1}, ${o.name} ${formatMoney(o.priceCents)}`,
+        );
         say(
           writer,
-          `We have ${intent.totalMatches} of those. Which one? ${names.join(', ')}.`,
+          `We have ${intent.totalMatches} of those. Sign the number you want. ${names.join('. ')}.`,
         );
       } else {
         const added: string[] = [];

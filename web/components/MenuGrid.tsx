@@ -61,7 +61,9 @@ export function MenuGrid({ categories, onPick, disabled }: Props) {
             "B.." or "C..". A row gives the name the width it needs and makes
             the price easy to scan down the right edge.
           */}
-          <ul className="space-y-2">
+          {/* Columns follow the popup's width (a container query), not the
+              viewport's, so a narrow popup stays one column. */}
+          <ul className="grid gap-2 @2xl:grid-cols-2 @5xl:grid-cols-3">
             {categories[category].map((item) => (
               <li key={item.slug}>
                 <button

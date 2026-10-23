@@ -94,7 +94,7 @@ export function Composer({ onSend, listening, speechSupported, disabled }: Props
       <button
         type="submit"
         disabled={disabled || text.trim().length === 0}
-        className="min-h-14 shrink-0 rounded-control bg-action px-7 text-[1.0625rem] font-bold text-white transition hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-ink-faint"
+        className="min-h-14 shrink-0 rounded-control bg-action px-7 text-[1.0625rem] font-bold text-on-action transition hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-line-strong disabled:text-ink-faint"
       >
         Send
       </button>
