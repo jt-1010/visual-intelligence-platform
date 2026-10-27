@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { latestReply, tagged, toTurns } from '@/lib/interaction/transcript';
+import { latestReply, replyToSpeak, tagged, toTurns } from '@/lib/interaction/transcript';
 
 /**
  * The transcript is the Deaf customer's entire view of the conversation, so a
@@ -86,5 +86,25 @@ describe('latestReply', () => {
 
   it('is empty before the terminal has said anything', () => {
     assert.equal(latestReply(toTurns([user('1', tagged('text', 'hello'))])), '');
+  });
+});
+
+describe('replyToSpeak', () => {
+  it('is empty while the customer is waiting, so the old reply is not spoken again', () => {
+    const turns = toTurns([
+      assistant('a1', 'Hello and welcome! What can I get for you today?'),
+      user('u1', tagged('sign', 'hamburger')),
+    ]);
+    assert.equal(replyToSpeak(turns), null);
+    assert.equal(latestReply(turns), 'Hello and welcome! What can I get for you today?');
+  });
+
+  it('is the new reply once it arrives', () => {
+    const turns = toTurns([
+      assistant('a1', 'Hello and welcome!'),
+      user('u1', tagged('sign', 'hamburger')),
+      assistant('a2', 'Added 1 Hamburger $5.49. Anything else?'),
+    ]);
+    assert.equal(replyToSpeak(turns)?.id, 'a2');
   });
 });

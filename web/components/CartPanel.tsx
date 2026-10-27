@@ -25,6 +25,10 @@ type Props = {
   onConfirm: () => void;
   onClear: () => void;
   busy: boolean;
+  onSendToKitchen?: () => void;
+  /** Shown on the kitchen button, e.g. "Español"; English when translation is off. */
+  kitchenLanguage?: string;
+  sendingToKitchen?: boolean;
 };
 
 /**
@@ -38,7 +42,15 @@ type Props = {
  * The aria-live region matters just as much in the other direction: a blind
  * customer has no panel to glance at, so this is where additions are announced.
  */
-export function CartPanel({ cart, onConfirm, onClear, busy }: Props) {
+export function CartPanel({
+  cart,
+  onConfirm,
+  onClear,
+  busy,
+  onSendToKitchen,
+  kitchenLanguage = 'English',
+  sendingToKitchen = false,
+}: Props) {
   const lines = cart?.lines ?? [];
   const empty = lines.length === 0;
 
@@ -121,6 +133,17 @@ export function CartPanel({ cart, onConfirm, onClear, busy }: Props) {
         >
           {empty ? 'Add something first' : 'Confirm order'}
         </button>
+
+        {onSendToKitchen && (
+          <button
+            type="button"
+            onClick={onSendToKitchen}
+            disabled={empty || busy || sendingToKitchen}
+            className="mt-3 min-h-12 w-full rounded-control border-2 border-sign bg-sign-soft px-6 text-[1.0625rem] font-bold text-sign transition hover:brightness-95 disabled:cursor-not-allowed disabled:border-line disabled:bg-sunk disabled:text-ink-faint"
+          >
+            {sendingToKitchen ? 'Sending…' : `Send to kitchen · ${kitchenLanguage}`}
+          </button>
+        )}
       </div>
     </aside>
   );

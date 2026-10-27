@@ -11,27 +11,38 @@ import { MenuGrid, type MenuItem } from './MenuGrid';
 import { MenuDialog } from './MenuDialog';
 import { Composer } from './Composer';
 import { ChoicePrompt } from './ChoicePrompt';
-import { useSignSocket, type SignEvent } from '@/lib/sign/useSignSocket';
-import { useGlossBuffer } from '@/lib/interaction/useGlossBuffer';
-import { useSpeech, useSpeechRecognition } from '@/lib/interaction/useSpeech';
+import { LanguagePicker } from "./LanguagePicker";
+import { KitchenTicket, type Ticket } from "./KitchenTicket";
+import { LANGUAGES, type Lang } from "@/lib/translate/languages";
+import { useTranslations } from "@/lib/translate/useTranslations";
+import { useSignSocket, type SignEvent } from "@/lib/sign/useSignSocket";
+import { useGlossBuffer } from "@/lib/interaction/useGlossBuffer";
+import { useSpeech, useSpeechRecognition } from "@/lib/interaction/useSpeech";
 import {
-  latestReply,
+  replyToSpeak,
   pendingChoice,
   tagged,
   toTurns,
   type PendingChoice,
-} from '@/lib/interaction/transcript';
+} from "@/lib/interaction/transcript";
 
 /** Number signs the classifier knows, for picking a numbered option. */
 const CHOICE_NUMBERS: Record<string, number> = {
-  one: 1, two: 2, three: 3, four: 4, six: 6, seven: 7, eight: 8, nine: 9,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
 };
-import type { CapturedFrame } from '@/lib/mediapipe/landmarks';
+import type { CapturedFrame } from "@/lib/mediapipe/landmarks";
 import {
   DEFAULT_THRESHOLDS,
   type PresenceState,
   type PresenceThresholds,
-} from '@/lib/mediapipe/presence';
+} from "@/lib/mediapipe/presence";
 
 /**
  * One ordering session.
@@ -60,14 +71,19 @@ type Props = {
   tuning?: boolean;
 };
 
-export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props) {
-  const [presence, setPresence] = useState<PresenceState>('absent');
+export function OrderSession({
+  sessionId,
+  onSessionEnd,
+  tuning = false,
+}: Props) {
+  const [presence, setPresence] = useState<PresenceState>("absent");
   const [handsVisible, setHandsVisible] = useState(0);
   const [shoulderWidth, setShoulderWidth] = useState<number | null>(null);
   const [heldMs, setHeldMs] = useState(0);
   const [bodyDetected, setBodyDetected] = useState(false);
   const [rawDropouts, setRawDropouts] = useState(0);
-  const [thresholds, setThresholds] = useState<PresenceThresholds>(DEFAULT_THRESHOLDS);
+  const [thresholds, setThresholds] =
+    useState<PresenceThresholds>(DEFAULT_THRESHOLDS);
   const [showOverlay, setShowOverlay] = useState(tuning);
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
@@ -84,25 +100,31 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
     The toggle stays for the room this stands in, not for the customer.
   */
   const [muted, setMuted] = useState(false);
+  const [translateTo, setTranslateTo] = useState<Lang | null>(null);
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [sendingToKitchen, setSendingToKitchen] = useState(false);
+  const [kitchenError, setKitchenError] = useState<string | null>(null);
 
   const transport = useMemo(
-    () => new DefaultChatTransport({ api: '/api/agent', body: { sessionId } }),
+    () => new DefaultChatTransport({ api: "/api/agent", body: { sessionId } }),
     [sessionId],
   );
 
   // Held in a ref so `onFinish` always runs the latest handler. The Chat
   // instance captures its callbacks once, so a plain closure here would go on
   // reading the `muted` value from the render where the chat was created.
-  const finishRef = useRef<(finalText: string) => void>(() => {});
+  const finishRef = useRef<(messageId: string, finalText: string) => void>(
+    () => {},
+  );
 
   const { messages, sendMessage, status, error } = useChat({
     transport,
     onFinish: ({ message }) => {
       const text = message.parts
-        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+        .filter((p): p is { type: "text"; text: string } => p.type === "text")
         .map((p) => p.text)
-        .join('');
-      finishRef.current(text);
+        .join("");
+      finishRef.current(message.id, text);
     },
   });
   const speech = useSpeech();
@@ -110,15 +132,45 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
 
   // --- What the customer sees, and what gets spoken -------------------------
   const turns = useMemo(() => toTurns(messages), [messages]);
-  const assistantText = useMemo(() => latestReply(turns), [turns]);
+  const reply = useMemo(() => replyToSpeak(turns), [turns]);
   // Read from the tool result rather than the reply, because the reply has
   // been observed claiming an item was added when none was.
   const choice = useMemo(() => pendingChoice(messages), [messages]);
 
+  // Translation of signed turns
+  const latestSignId = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].channel === "sign") return turns[i].id;
+    }
+    return null;
+  }, [turns]);
+  const latestSignRef = useRef(latestSignId);
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+    latestSignRef.current = latestSignId;
+    mutedRef.current = muted;
+  });
+
+  const speakTranslation = useCallback(
+    (text: string, lang: Lang) => speech.speakIn(text, LANGUAGES[lang].speech),
+    [speech],
+  );
+  const translations = useTranslations(
+    turns,
+    translateTo,
+    useCallback(
+      (turnId: string, text: string, lang: Lang) => {
+        // Only the sign just made is read aloud; switching language must not replay history.
+        if (!mutedRef.current && turnId === latestSignRef.current)
+          speakTranslation(text, lang);
+      },
+      [speakTranslation],
+    ),
+  );
+
   const send = useCallback(
     (text: string) => {
       speech.cancel();
-      speech.reset();
       sendMessage({ text });
     },
     [sendMessage, speech],
@@ -126,7 +178,12 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
 
   const pickChoice = useCallback(
     (picked: PendingChoice, name: string) =>
-      send(tagged('touch', `${picked.quantity > 1 ? picked.quantity : 'One'} ${name}.`)),
+      send(
+        tagged(
+          "touch",
+          `${picked.quantity > 1 ? picked.quantity : "One"} ${name}.`,
+        ),
+      ),
     [send],
   );
 
@@ -154,7 +211,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             return;
           }
         }
-        send(tagged('sign', glosses.join(' ')));
+        send(tagged("sign", glosses.join(" ")));
       },
       [send, pickChoice],
     ),
@@ -178,12 +235,12 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
     which it hears again. Closing it while `speaking` is the cure, and closing
     it while `busy` keeps room noise out of the gap between question and reply.
   */
-  const answering = status === 'submitted' || status === 'streaming';
+  const answering = status === "submitted" || status === "streaming";
   const speechHandsFree = !muted && !speech.speaking && !answering;
   const recognition = useSpeechRecognition(
     useCallback(
       (text: string) => {
-        send(tagged('speech', text));
+        send(tagged("speech", text));
       },
       [send],
     ),
@@ -201,7 +258,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
       setRawDropouts(frame.rawDropouts);
       // Only stream landmarks while someone is actually there. Feeding an empty
       // frame to the recogniser all day is wasted CPU and wasted bandwidth.
-      if (frame.presence === 'present') sign.send(frame.lm);
+      if (frame.presence === "present") sign.send(frame.lm);
     },
     [sign],
   );
@@ -209,7 +266,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   const handleArrive = useCallback(() => {
     if (greetedRef.current) return;
     greetedRef.current = true;
-    send(tagged('presence', 'A customer has just stepped up to the counter.'));
+    send(tagged("presence", "A customer has just stepped up to the counter."));
   }, [send]);
 
   const handleDepart = useCallback(() => {
@@ -219,20 +276,23 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   }, [glossBuffer, speech, onSessionEnd]);
 
   const updateThresholds = useCallback(
-    (next: Partial<PresenceThresholds>) => setThresholds((t) => ({ ...t, ...next })),
+    (next: Partial<PresenceThresholds>) =>
+      setThresholds((t) => ({ ...t, ...next })),
     [],
   );
 
   // --- Speak the response as it streams ------------------------------------
   useEffect(() => {
-    if (muted || !assistantText) return;
-    speech.speakStreaming(assistantText);
-  }, [assistantText, muted, speech]);
+    if (muted || !reply) return;
+    speech.speakStreaming(reply.id, reply.text);
+  }, [reply, muted, speech]);
 
   // --- On turn end: finish speaking, refresh the cart -----------------------
   const refreshCart = useCallback(async () => {
     try {
-      const res = await fetch(`/api/cart?sessionId=${encodeURIComponent(sessionId)}`);
+      const res = await fetch(
+        `/api/cart?sessionId=${encodeURIComponent(sessionId)}`,
+      );
       if (res.ok) setCart(await res.json());
     } catch {
       // Non-fatal: the caption already told the person what happened.
@@ -244,29 +304,65 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
   // derived state for it means re-running on every unrelated re-render that
   // lands while the status happens to be 'ready'.
   useEffect(() => {
-    finishRef.current = (finalText: string) => {
-      if (!muted && finalText) speech.flush(finalText);
+    finishRef.current = (messageId: string, finalText: string) => {
+      if (!muted && finalText) speech.flush(messageId, finalText);
       void refreshCart();
     };
   });
 
   // --- Menu ----------------------------------------------------------------
   useEffect(() => {
-    fetch('/api/menu')
+    fetch("/api/menu")
       .then((r) => r.json())
       .then((d) => setMenu(d.categories ?? {}))
       .catch(() => setMenu({}));
   }, []);
 
   const confirmOrder = useCallback(() => {
-    send(tagged('touch', "That's everything. Please read back my order and confirm it."));
+    send(
+      tagged(
+        "touch",
+        "That's everything. Please read back my order and confirm it.",
+      ),
+    );
   }, [send]);
+
+  const speakTicket = useCallback(
+    (t: Ticket) => {
+      speech.cancel();
+      speech.speakIn(t.text, t.lang ? LANGUAGES[t.lang].speech : "en-US");
+    },
+    [speech],
+  );
+
+  const sendToKitchen = useCallback(async () => {
+    setSendingToKitchen(true);
+    setKitchenError(null);
+    try {
+      const res = await fetch("/api/kitchen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, lang: translateTo }),
+      });
+      const data = (await res.json()) as Ticket & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "could not send the order");
+      setTicket(data);
+      // The kitchen hears it even when the customer-facing voice is muted.
+      speakTicket(data);
+    } catch (e) {
+      setKitchenError(
+        e instanceof Error ? e.message : "could not send the order",
+      );
+    } finally {
+      setSendingToKitchen(false);
+    }
+  }, [sessionId, translateTo, speakTicket]);
 
   const startOver = useCallback(() => {
-    send(tagged('touch', 'Cancel everything and start over.'));
+    send(tagged("touch", "Cancel everything and start over."));
   }, [send]);
 
-  const busy = status === 'submitted' || status === 'streaming';
+  const busy = status === "submitted" || status === "streaming";
 
   return (
     <div className="flex h-[calc(100dvh-4.5rem)] min-h-0 gap-5">
@@ -277,7 +373,14 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
          ---------------------------------------------------------------- */}
       <main className="flex min-w-0 flex-1 flex-col gap-4">
         <div className="flex min-h-0 flex-1 flex-col">
-          <CaptionPanel turns={turns} glosses={glossBuffer.glosses} thinking={busy} />
+          <CaptionPanel
+            turns={turns}
+            glosses={glossBuffer.glosses}
+            thinking={busy}
+            translateTo={translateTo}
+            translations={translations}
+            onSpeakTranslation={speakTranslation}
+          />
         </div>
 
         {choice && (
@@ -286,6 +389,23 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             disabled={busy}
             onPick={(name) => pickChoice(choice, name)}
           />
+        )}
+
+        {ticket && (
+          <KitchenTicket
+            ticket={ticket}
+            onReplay={() => speakTicket(ticket)}
+            onClose={() => setTicket(null)}
+          />
+        )}
+
+        {kitchenError && (
+          <p
+            role="alert"
+            className="shrink-0 rounded-panel border border-danger bg-danger-soft px-6 py-4 text-[1rem] text-danger"
+          >
+            Kitchen: {kitchenError}
+          </p>
         )}
 
         {error && (
@@ -298,7 +418,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
         )}
 
         <Composer
-          onSend={(text) => send(tagged('text', text))}
+          onSend={(text) => send(tagged("text", text))}
           listening={recognition.listening}
           speechSupported={recognition.supported}
           disabled={busy}
@@ -323,7 +443,17 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
       {/* The order gets its own full-height column, between the chat and the
           camera, so a long order stays readable without scrolling. */}
       <div className="flex w-[20rem] shrink-0 flex-col xl:w-[24rem]">
-        <CartPanel cart={cart} onConfirm={confirmOrder} onClear={startOver} busy={busy} />
+        <CartPanel
+          cart={cart}
+          onConfirm={confirmOrder}
+          onClear={startOver}
+          busy={busy}
+          onSendToKitchen={sendToKitchen}
+          kitchenLanguage={
+            translateTo ? LANGUAGES[translateTo].native : "English"
+          }
+          sendingToKitchen={sendingToKitchen}
+        />
       </div>
 
       <aside className="flex w-[18rem] shrink-0 flex-col gap-4 xl:w-[22rem]">
@@ -340,7 +470,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           </div>
 
           <p className="rounded-panel border border-line bg-card px-4 py-2 text-[0.9375rem] font-bold text-ink-soft">
-            {handsVisible ? 'I can see your hands' : 'Raise your hands to sign'}
+            {handsVisible ? "I can see your hands" : "Raise your hands to sign"}
           </p>
         </section>
 
@@ -351,7 +481,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             onClick={() => setMenuOpen(true)}
             className="flex min-h-16 flex-1 items-center justify-center gap-3 rounded-panel bg-action text-[1.375rem] font-bold text-on-action transition hover:bg-action-hover"
           >
-                        Open menu
+            Open menu
           </button>
           <button
             type="button"
@@ -360,19 +490,22 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
               speech.cancel();
             }}
             aria-pressed={muted}
-            aria-label={muted ? 'Unmute' : 'Mute'}
+            aria-label={muted ? "Unmute" : "Mute"}
             className={[
-              'flex min-h-16 w-24 shrink-0 flex-col items-center justify-center rounded-panel border-2 text-[0.9375rem] font-bold transition',
+              "flex min-h-16 w-24 shrink-0 flex-col items-center justify-center rounded-panel border-2 text-[0.9375rem] font-bold transition",
               muted
-                ? 'border-danger bg-danger-soft text-danger'
-                : 'border-line-strong bg-card text-ink hover:border-ink-soft',
-            ].join(' ')}
+                ? "border-danger bg-danger-soft text-danger"
+                : "border-line-strong bg-card text-ink hover:border-ink-soft",
+            ].join(" ")}
           >
-            <span aria-hidden="true" className="text-[1.5rem] leading-none">{muted ? '🔇' : '🔊'}</span>
-            <span className="mt-1">{muted ? 'Unmute' : 'Mute'}</span>
+            <span aria-hidden="true" className="text-[1.5rem] leading-none">
+              {muted ? "🔇" : "🔊"}
+            </span>
+            <span className="mt-1">{muted ? "Unmute" : "Mute"}</span>
           </button>
         </div>
 
+        <LanguagePicker value={translateTo} onChange={setTranslateTo} />
 
         {/* Fills the rest of the column so it is never empty: the menu, one
             tap per item. The popup is still there for browsing big. */}
@@ -381,7 +514,9 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
           className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel border border-line bg-card"
         >
           <div className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-3">
-            <h2 className="text-[1.125rem] font-bold tracking-[-0.01em]">Quick add</h2>
+            <h2 className="text-[1.125rem] font-bold tracking-[-0.01em]">
+              Quick add
+            </h2>
             <button
               type="button"
               onClick={() => setMenuOpen(true)}
@@ -394,7 +529,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
             <MenuGrid
               categories={menu}
               disabled={busy}
-              onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
+              onPick={(item) => send(tagged("touch", `Add one ${item.name}.`))}
             />
           </div>
         </section>
@@ -405,7 +540,7 @@ export function OrderSession({ sessionId, onSessionEnd, tuning = false }: Props)
         onClose={() => setMenuOpen(false)}
         categories={menu}
         disabled={busy}
-        onPick={(item) => send(tagged('touch', `Add one ${item.name}.`))}
+        onPick={(item) => send(tagged("touch", `Add one ${item.name}.`))}
       />
     </div>
   );

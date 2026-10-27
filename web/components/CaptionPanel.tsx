@@ -2,12 +2,18 @@
 
 import { useEffect, useRef } from 'react';
 import type { Turn } from '@/lib/interaction/transcript';
+import { LANGUAGES, type Lang } from "@/lib/translate/languages";
+import type { Translation } from "@/lib/translate/useTranslations";
 
 type Props = {
   turns: Turn[];
   /** Signs recognised but not yet sent -- the person mid-sentence. */
   glosses: string[];
   thinking: boolean;
+  // Language signed turns are translated into, or null when translation is off.
+  translateTo?: Lang | null;
+  translations?: Record<string, Translation>;
+  onSpeakTranslation?: (text: string, lang: Lang) => void;
 };
 
 /**
@@ -27,7 +33,14 @@ type Props = {
  * was that?" -- and it is also, incidentally, what fills a column that used to
  * be two-thirds empty.
  */
-export function CaptionPanel({ turns, glosses, thinking }: Props) {
+export function CaptionPanel({
+  turns,
+  glosses,
+  thinking,
+  translateTo = null,
+  translations = {},
+  onSpeakTranslation,
+}: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const empty = turns.length === 0 && glosses.length === 0 && !thinking;
 
@@ -41,12 +54,13 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
   // While a reply is still coming, nothing gets the display size. Leaving the
   // PREVIOUS answer in the big type would present a stale line as the current
   // one -- the exact moment a customer is most likely to be reading it.
-  const awaitingReply = thinking && turns[turns.length - 1]?.role !== 'terminal';
+  const awaitingReply =
+    thinking && turns[turns.length - 1]?.role !== "terminal";
 
   let focus: Turn | undefined;
   if (!awaitingReply) {
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].role === 'terminal') {
+      if (turns[i].role === "terminal") {
         focus = turns[i];
         break;
       }
@@ -67,9 +81,9 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
         The camera now has its own column, so no corner needs reserving.
       */
       className={[
-        'flex min-h-0 flex-1 flex-col overflow-y-auto rounded-panel border border-line',
-        'bg-card px-8 py-7',
-      ].join(' ')}
+        "flex min-h-0 flex-1 flex-col overflow-y-auto rounded-panel border border-line",
+        "bg-card px-8 py-7",
+      ].join(" ")}
     >
       {empty ? (
         <div className="my-auto">
@@ -87,13 +101,22 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
         // turns out of reach -- an auto margin scrolls correctly.)
         <div className="mt-auto space-y-5">
           {turns.map((turn) => {
-            if (turn.role === 'customer') {
+            if (turn.role === "customer") {
               return (
                 <div key={turn.id} className="flex flex-col items-end">
-                  <p className="text-[0.9375rem] text-ink-faint">{turn.label}</p>
+                  <p className="text-[0.9375rem] text-ink-faint">
+                    {turn.label}
+                  </p>
                   <p className="mt-1 max-w-[60ch] rounded-panel rounded-br-sm border border-line bg-sunk px-4 py-2.5 text-[1.1875rem] leading-snug text-ink">
                     {turn.text}
                   </p>
+                  {translateTo && turn.channel === "sign" && (
+                    <TranslationLine
+                      lang={translateTo}
+                      translation={translations[turn.id]}
+                      onSpeak={onSpeakTranslation}
+                    />
+                  )}
                 </div>
               );
             }
@@ -106,20 +129,22 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
                 key={turn.id}
                 className={
                   newest
-                    ? 'max-w-[34ch] text-balance text-[clamp(1.5rem,2.2vw,2.125rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink'
-                    : 'max-w-[68ch] text-[1.1875rem] leading-relaxed text-ink-soft'
+                    ? "max-w-[34ch] text-balance text-[clamp(1.5rem,2.2vw,2.125rem)] font-bold leading-[1.15] tracking-[-0.015em] text-ink"
+                    : "max-w-[68ch] text-[1.1875rem] leading-relaxed text-ink-soft"
                 }
               >
                 {turn.text}
                 {newest && thinking && (
-                  <span aria-hidden="true" className="caret ml-1 inline-block text-action">
+                  <span
+                    aria-hidden="true"
+                    className="caret ml-1 inline-block text-action"
+                  >
                     ▌
                   </span>
                 )}
               </p>
             );
           })}
-
 
           {/*
             The signs read so far, while you are still signing.
@@ -131,7 +156,9 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
           */}
           {glosses.length > 0 && (
             <div aria-live="polite">
-              <p className="text-[0.9375rem] text-ink-faint">You&rsquo;re signing</p>
+              <p className="text-[0.9375rem] text-ink-faint">
+                You&rsquo;re signing
+              </p>
               <p className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="sr-only">Signs recognised so far:</span>
                 {glosses.map((gloss, i) => (
@@ -153,6 +180,46 @@ export function CaptionPanel({ turns, glosses, thinking }: Props) {
             </p>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function TranslationLine({
+  lang,
+  translation,
+  onSpeak,
+}: {
+  lang: Lang;
+  translation?: Translation;
+  onSpeak?: (text: string, lang: Lang) => void;
+}) {
+  const { native, speech } = LANGUAGES[lang];
+  const text = translation && "text" in translation ? translation.text : null;
+
+  return (
+    <div className="mt-1.5 flex max-w-[60ch] items-center gap-2" lang={speech}>
+      <span className="text-[0.875rem] font-bold text-sign">{native}</span>
+      {text ? (
+        <>
+          <p className="rounded-panel rounded-br-sm border border-sign bg-sign-soft px-4 py-2 text-[1.125rem] leading-snug text-ink">
+            {text}
+          </p>
+          {onSpeak && (
+            <button
+              type="button"
+              onClick={() => onSpeak(text, lang)}
+              aria-label={`Say it in ${LANGUAGES[lang].name}`}
+              className="rounded-control px-1.5 text-[1.25rem] leading-none text-ink-soft hover:text-ink"
+            >
+              <span aria-hidden="true">🔊</span>
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="text-[1rem] text-ink-faint">
+          {translation ? "Could not translate." : "Translating…"}
+        </p>
       )}
     </div>
   );

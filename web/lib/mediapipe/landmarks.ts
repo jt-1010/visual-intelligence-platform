@@ -72,6 +72,7 @@ export class LandmarkEngine {
   private hands?: HandLandmarker;
   private raf = 0;
   private lastTimestamp = -1;
+  private lastVideoTime = -1;
   private presence = new PresenceTracker();
   private running = false;
 
@@ -109,10 +110,17 @@ export class LandmarkEngine {
     const tick = () => {
       if (!this.running) return;
 
-      if (video.readyState >= 2) {
+      // requestAnimationFrame follows the monitor (240 Hz on some), not the camera.
+      // The model's 32-frame window assumes ~fpsTarget fps, so skip repeated camera
+      // images and anything faster than that; otherwise the window spans a fraction of a sign.
+      const now = performance.now();
+      const minGapMs = 1000 / FEATURE_SPEC.fpsTarget - 2;
+      const fresh = video.currentTime !== this.lastVideoTime;
+      if (video.readyState >= 2 && fresh && now - this.lastTimestamp >= minGapMs) {
+        this.lastVideoTime = video.currentTime;
         // detectForVideo rejects non-increasing timestamps, and on a paused or
         // stalled stream performance.now() can repeat within a millisecond.
-        const ts = Math.max(Math.round(performance.now()), this.lastTimestamp + 1);
+        const ts = Math.max(Math.round(now), this.lastTimestamp + 1);
         this.lastTimestamp = ts;
 
         const frame = this.capture(video, ts);

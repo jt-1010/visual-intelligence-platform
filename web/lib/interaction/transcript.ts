@@ -195,6 +195,18 @@ export function pendingChoice(messages: UiMessage[]): PendingChoice | null {
   return null;
 }
 
+/**
+ * The reply to speak right now: the last turn, only if the terminal said it.
+ *
+ * latestReply is wrong for this. Between a customer's turn and the answer it
+ * still returns the previous reply, which re-spoke the greeting and advanced the
+ * spoken-offset so the real answer was read from mid-sentence ("ything else?").
+ */
+export function replyToSpeak(turns: Turn[]): Turn | null {
+  const last = turns[turns.length - 1];
+  return last?.role === 'terminal' ? last : null;
+}
+
 /** The terminal's most recent line -- the one that gets the big type and the voice. */
 export function latestReply(turns: Turn[]): string {
   for (let i = turns.length - 1; i >= 0; i--) {

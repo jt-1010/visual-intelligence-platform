@@ -47,7 +47,9 @@ const serverFalse = () => false;
 /** Split off complete sentences, leaving any trailing partial behind. */
 function completeSentences(text: string): { sentences: string[]; rest: string } {
   const sentences: string[] = [];
-  const re = /[^.!?]+[.!?]+[\s"')\]]*/g;
+  // A sentence ends at punctuation followed by whitespace, so "$5.49" is not split
+  // into "$5." and "49.". The final sentence has no trailing space and waits for flush.
+  const re = /[\s\S]*?[.!?]+["')\]]*\s+/g;
   let lastIndex = 0;
   let m: RegExpExecArray | null;
 
@@ -61,7 +63,7 @@ function completeSentences(text: string): { sentences: string[]; rest: string } 
 
 export function useSpeech() {
   const [speaking, setSpeaking] = useState(false);
-  const spokenUpTo = useRef(0);
+  const spoken = useRef({ id: '', upTo: 0 });
 
   const supported = useSyncExternalStore(
     NEVER_CHANGES,
@@ -69,12 +71,22 @@ export function useSpeech() {
     serverFalse,
   );
 
-  const enqueue = useCallback((text: string) => {
+  const enqueue = useCallback((text: string, lang?: string) => {
     if (!text.trim() || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.02;
     utterance.pitch = 1.0;
+    if (lang) {
+      utterance.lang = lang;
+      // Without a matching voice the browser reads Chinese with an English voice.
+      const prefix = lang.split('-')[0];
+      const voices = window.speechSynthesis.getVoices();
+      const voice =
+        voices.find((v) => v.lang.replace('_', '-') === lang) ??
+        voices.find((v) => v.lang.toLowerCase().startsWith(prefix));
+      if (voice) utterance.voice = voice;
+    }
     utterance.onstart = () => setSpeaking(true);
     utterance.onend = () => setSpeaking(window.speechSynthesis.pending);
     window.speechSynthesis.speak(utterance);
@@ -84,31 +96,35 @@ export function useSpeech() {
    * Feed the growing assistant message. Speaks each sentence once, the moment
    * it is complete.
    */
+  // Progress is per message id: a reply already spoken can never be re-spoken by a
+  // re-render, and a new reply always starts from its first character.
+  const progress = useCallback((messageId: string) => {
+    if (spoken.current.id !== messageId) spoken.current = { id: messageId, upTo: 0 };
+    return spoken.current;
+  }, []);
+
   const speakStreaming = useCallback(
-    (fullText: string) => {
-      const pending = fullText.slice(spokenUpTo.current);
-      const { sentences, rest } = completeSentences(pending);
+    (messageId: string, fullText: string) => {
+      const p = progress(messageId);
+      const { sentences, rest } = completeSentences(fullText.slice(p.upTo));
       if (sentences.length === 0) return;
 
-      spokenUpTo.current = fullText.length - rest.length;
+      p.upTo = fullText.length - rest.length;
       for (const s of sentences) enqueue(s);
     },
-    [enqueue],
+    [enqueue, progress],
   );
 
   /** Flush whatever is left when the stream ends mid-sentence. */
   const flush = useCallback(
-    (fullText: string) => {
-      const rest = fullText.slice(spokenUpTo.current).trim();
-      spokenUpTo.current = fullText.length;
+    (messageId: string, fullText: string) => {
+      const p = progress(messageId);
+      const rest = fullText.slice(p.upTo).trim();
+      p.upTo = fullText.length;
       if (rest) enqueue(rest);
     },
-    [enqueue],
+    [enqueue, progress],
   );
-
-  const reset = useCallback(() => {
-    spokenUpTo.current = 0;
-  }, []);
 
   const cancel = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -117,7 +133,10 @@ export function useSpeech() {
     setSpeaking(false);
   }, []);
 
-  return { speakStreaming, flush, reset, cancel, speaking, supported };
+  /** Speak a whole line in another language, e.g. a translation ('es-ES'). */
+  const speakIn = useCallback((text: string, lang: string) => enqueue(text, lang), [enqueue]);
+
+  return { speakStreaming, flush, speakIn, cancel, speaking, supported };
 }
 
 /**
