@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Link from 'next/link';
 import { SessionShell } from '@/components/SessionShell';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 // Rendered fresh per request, so each page load is a genuinely new session
 // and never resurrects a previous customer's cart.
@@ -31,11 +32,14 @@ export default async function OrderPage({
           <span className="text-[0.9375rem] font-normal text-ink-soft">Order here</span>
         </Link>
 
-        {tuning && (
-          <span className="rounded-control bg-attention-soft px-3 py-1 text-[0.875rem] font-bold text-attention">
-            Calibration view
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {tuning && (
+            <span className="rounded-control bg-attention-soft px-3 py-1 text-[0.875rem] font-bold text-attention">
+              Calibration view
+            </span>
+          )}
+          <ThemeToggle />
+        </div>
       </header>
 
       <SessionShell baseSessionId={randomUUID()} tuning={tuning} />

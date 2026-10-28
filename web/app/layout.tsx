@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Atkinson_Hyperlegible } from 'next/font/google';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 /*
@@ -23,7 +24,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={atkinson.variable}>
+    <html lang="en" className={atkinson.variable} data-theme="light" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       {/*
         suppressHydrationWarning is here for browser extensions, not for our own
         markup. Grammarly and similar tools write attributes onto <body>

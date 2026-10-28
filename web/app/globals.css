@@ -54,35 +54,33 @@
   --radius-panel: 1rem;
 }
 
-/* --- Dark, for viewers who ask for it ----------------------------------- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --color-paper: #121416;
-    --color-card: #1b1e21;
-    --color-sunk: #0e1012;
-    --color-ink: #f7f5f2;
-    --color-ink-soft: #cdcac4;
-    --color-ink-faint: #a5a19a;
-    --color-line: #33383c;
-    --color-line-strong: #5a6066;
-
-    --color-action: #6ad8c1;
-    --color-action-hover: #8ae3d1;
-    --color-action-soft: #163430;
-    --color-on-action: #0e1012;
-
-    --color-attention: #f0ac72;
-    --color-attention-soft: #35261a;
-
-    --color-sign: #6ad8c1;
-    --color-sign-soft: #163430;
-
-    --color-danger: #f08b7c;
-    --color-danger-soft: #3a1f1c;
-  }
+/* Light is the default regardless of the operating system preference. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-paper: #f6f5f2;
+  --color-card: #ffffff;
+  --color-sunk: #eceae5;
+  --color-ink: #121110;
+  --color-ink-soft: #46433e;
+  --color-ink-faint: #66625b;
+  --color-line: #d9d5ce;
+  --color-line-strong: #a9a49b;
+  --color-action: #075e51;
+  --color-action-hover: #054a40;
+  --color-action-soft: #e3f0ed;
+  --color-on-action: #ffffff;
+  --color-attention: #8f4207;
+  --color-attention-soft: #fbefe3;
+  --color-sign: #075e51;
+  --color-sign-soft: #e3f0ed;
+  --color-danger: #9a2515;
+  --color-danger-soft: #fdecea;
 }
 
+/* --- Dark, for viewers who ask for it ----------------------------------- */
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --color-paper: #121416;
   --color-card: #1b1e21;
   --color-sunk: #0e1012;
