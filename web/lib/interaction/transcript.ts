@@ -12,7 +12,28 @@
  * tells them to repeat the sign rather than check the keyboard.
  */
 
+import type { CartLine } from '@/components/CartPanel';
+
 export type Channel = 'sign' | 'speech' | 'text' | 'touch' | 'presence';
+
+export type ConfirmedOrder = { orderNumber: number; total: string; items?: CartLine[] };
+
+/** Keep the receipt available even after the active cart has been emptied. */
+export function latestConfirmedOrder(messages: UiMessage[]): ConfirmedOrder | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role !== 'assistant') continue;
+    for (const part of [...messages[i].parts].reverse()) {
+      if (!part || typeof part !== 'object') continue;
+      const p = part as { type?: string; state?: string; output?: Partial<ConfirmedOrder> & { confirmed?: boolean } };
+      const out = p.output;
+      if (p.type === 'tool-confirm_order' && p.state === 'output-available' && out?.confirmed === true
+        && typeof out.orderNumber === 'number' && typeof out.total === 'string') {
+        return { orderNumber: out.orderNumber, total: out.total, items: out.items };
+      }
+    }
+  }
+  return null;
+}
 
 const TAG: Record<Channel, string> = {
   sign: 'SIGN',

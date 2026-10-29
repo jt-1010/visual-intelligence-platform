@@ -8,7 +8,17 @@
     "points_per_hand": 21,
     "note": "MediaPipe HandLandmarker order: wrist, then thumb->pinky, 4 joints each."
   },
-  "pose_indices": [0, 11, 12, 13, 14, 15, 16, 23, 24],
+  "pose_indices": [
+    0,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    23,
+    24
+  ],
   "pose_index_names": [
     "nose",
     "left_shoulder",
@@ -31,7 +41,7 @@
     "window_frames": 32,
     "stride_frames": 4,
     "motion_gate_threshold": 0.012,
-    "confidence_threshold": 0.6,
+    "confidence_threshold": 0.4,
     "debounce_frames": 24,
     "note": "motion_gate_threshold is mean per-frame wrist displacement in shoulder-width units."
   }

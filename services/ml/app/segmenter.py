@@ -101,6 +101,11 @@ class SignSegmenter:
         self.frames_seen += 1
         self.frames_since_emit += 1
 
+        # Webcam jitter may never close the motion gate. Release the latch
+        # after a bounded cooldown so the same sign can be made again.
+        if self.frames_since_emit > self.debounce_frames * 2:
+            self.last_label = None
+
         if len(self.buffer) < self.window_frames:
             return None
         if self.frames_seen % self.stride != 0:
@@ -117,6 +122,8 @@ class SignSegmenter:
             # "want want want want want" and the phrase never settled long
             # enough to be sent. Requiring several consecutive quiet windows
             # distinguishes a hold inside a sign from a pause between signs.
+            self.candidate = None
+            self.candidate_windows = 0
             self.quiet_windows += 1
             if self.quiet_windows >= self.rest_windows:
                 self.last_label = None
@@ -129,16 +136,9 @@ class SignSegmenter:
     def accept(self, label: str, confidence: float) -> bool:
         """Decide whether a prediction should actually be emitted.
 
-        `last_label` is a latch on the sign currently being made, not a
-        rate limit. The previous version re-emitted the same label every
-        `debounce_frames`, because emitting reset the counter it was compared
-        against -- so holding WANT for two seconds produced WANT three times,
-        and holding it longer produced more. That is the "want want want want
-        want" in the demo.
-
-        A sign is emitted once when it starts. It can only be emitted again
-        after a boundary: a different sign, or the sustained rest that `push`
-        watches for.
+        Require stable, confident predictions and suppress repeated windows
+        of the last sign until rest, a different sign, or the cooldown in
+        `push` releases the latch.
         """
         if confidence < self.confidence_threshold:
             # An unsure reading breaks the run rather than extending it.
@@ -150,9 +150,8 @@ class SignSegmenter:
         if label != self.candidate:
             self.candidate = label
             self.candidate_windows = 1
-            return False
-
-        self.candidate_windows += 1
+        else:
+            self.candidate_windows += 1
         if self.candidate_windows < self.stability_windows:
             return False
 

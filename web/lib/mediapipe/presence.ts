@@ -57,12 +57,19 @@ export class PresenceTracker {
    *   pose was detected this frame. Doubles as a proximity proxy: a person
    *   across the room has narrow shoulders in normalised coordinates.
    */
-  update(shoulderWidth: number | null, now = performance.now()): PresenceState {
-    const seen = shoulderWidth !== null && shoulderWidth >= this.t.minShoulderWidth;
+  update(
+    shoulderWidth: number | null,
+    now = performance.now(),
+    handsVisible = 0,
+    bodyDetected = false,
+  ): PresenceState {
+    const hasShoulders = shoulderWidth !== null && shoulderWidth >= this.t.minShoulderWidth;
+    // Require proximity to begin arrival, then tolerate shoulders obscured by signing.
+    const seen = hasShoulders || handsVisible > 0 || (bodyDetected && shoulderWidth !== null);
 
     switch (this.state) {
       case 'absent':
-        if (seen) this.transition('arriving', now);
+        if (hasShoulders) this.transition('arriving', now);
         break;
 
       case 'arriving':

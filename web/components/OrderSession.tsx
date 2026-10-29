@@ -21,6 +21,7 @@ import { useSpeech, useSpeechRecognition } from "@/lib/interaction/useSpeech";
 import {
   replyToSpeak,
   pendingChoice,
+  latestConfirmedOrder,
   tagged,
   toTurns,
   type PendingChoice,
@@ -88,7 +89,7 @@ export function OrderSession({
   const [cart, setCart] = useState<Cart | null>(null);
   const [menu, setMenu] = useState<Record<string, MenuItem[]>>({});
   const [menuOpen, setMenuOpen] = useState(false);
-  /*
+    /*
     The terminal speaks, and listens, without being asked to.
 
     Pressing a button before you may talk is a barrier for the people this is
@@ -117,7 +118,7 @@ export function OrderSession({
     () => {},
   );
 
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, setMessages, sendMessage, status, error } = useChat({
     transport,
     onFinish: ({ message }) => {
       const text = message.parts
@@ -136,6 +137,7 @@ export function OrderSession({
   // Read from the tool result rather than the reply, because the reply has
   // been observed claiming an item was added when none was.
   const choice = useMemo(() => pendingChoice(messages), [messages]);
+  const confirmedOrder = useMemo(() => latestConfirmedOrder(messages), [messages]);
 
   // Translation of signed turns
   const latestSignId = useMemo(() => {
@@ -194,37 +196,45 @@ export function OrderSession({
   });
 
   // --- Sign input ----------------------------------------------------------
+  // Bridge socket events to the buffer so phrase flushes can reset the socket.
+  const addGlossRef = useRef<(label: string) => void>(() => {});
+  const sign = useSignSocket((event: SignEvent) => {
+    addGlossRef.current(event.label);
+  });
+  const { reset: resetSign } = sign;
+
   const glossBuffer = useGlossBuffer(
     useCallback(
       (glosses: string[]) => {
+        resetSign();
         /*
-          While "which one?" is open, a single number sign picks that option.
+          While "which one?" is open, a number sign picks that option even
+          when recognition adds noise glosses alongside it.
           Menu names are far outside the sign vocabulary ("Premium Crispy
           Chicken Deluxe Sandwich"), but ONE to NINE are all in it, so the
           options are numbered and the person signs the number.
         */
         const open = choiceRef.current;
-        if (open && glosses.length === 1) {
-          const n = CHOICE_NUMBERS[glosses[0].toLowerCase()];
-          if (n !== undefined && n <= open.options.length) {
+        if (open) {
+          const number = glosses.find((g) => {
+            const n = CHOICE_NUMBERS[g.toLowerCase()];
+            return n !== undefined && n >= 1 && n <= open.options.length;
+          });
+          if (number !== undefined) {
+            const n = CHOICE_NUMBERS[number.toLowerCase()];
             pickChoice(open, open.options[n - 1].name);
             return;
           }
         }
         send(tagged("sign", glosses.join(" ")));
       },
-      [send, pickChoice],
+      [send, pickChoice, resetSign],
     ),
   );
 
-  const sign = useSignSocket(
-    useCallback(
-      (event: SignEvent) => {
-        glossBuffer.add(event.label);
-      },
-      [glossBuffer],
-    ),
-  );
+  useEffect(() => {
+    addGlossRef.current = glossBuffer.add;
+  }, [glossBuffer.add]);
 
   // --- Speech input --------------------------------------------------------
   /*
@@ -256,24 +266,31 @@ export function OrderSession({
       setHeldMs(frame.heldMs);
       setBodyDetected(frame.bodyDetected);
       setRawDropouts(frame.rawDropouts);
-      // Only stream landmarks while someone is actually there. Feeding an empty
-      // frame to the recogniser all day is wasted CPU and wasted bandwidth.
-      if (frame.presence === "present") sign.send(frame.lm);
+      // Keep signing uninterrupted while presence tracking recovers.
+      if (
+        frame.presence === "present" ||
+        frame.presence === "leaving" ||
+        frame.handsVisible > 0
+      ) sign.send(frame.lm);
     },
     [sign],
   );
 
   const handleArrive = useCallback(() => {
+    resetSign();
     if (greetedRef.current) return;
     greetedRef.current = true;
     send(tagged("presence", "A customer has just stepped up to the counter."));
-  }, [send]);
+  }, [send, resetSign]);
 
   const handleDepart = useCallback(() => {
+    resetSign();
+    // Tracking blips must not discard an order already in progress.
+    if (confirmedOrder || (cart && cart.lines.length > 0)) return;
     glossBuffer.clear();
     speech.cancel();
     onSessionEnd();
-  }, [glossBuffer, speech, onSessionEnd]);
+  }, [cart, confirmedOrder, glossBuffer, speech, resetSign, onSessionEnd]);
 
   const updateThresholds = useCallback(
     (next: Partial<PresenceThresholds>) =>
@@ -299,10 +316,15 @@ export function OrderSession({
     }
   }, [sessionId]);
 
-  // Reacting to the finish EVENT rather than to a `status === 'ready'`
-  // transition. The turn ending is a real thing that happens once; watching a
-  // derived state for it means re-running on every unrelated re-render that
-  // lands while the status happens to be 'ready'.
+  // Sync on mount, message additions, and status transitions, including ready
+  // when a turn completes without delivering onFinish.
+  useEffect(() => {
+    // State updates only after the cart request completes, never synchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshCart();
+  }, [messages.length, status, refreshCart]);
+
+  // Keep speech completion tied to the finish event.
   useEffect(() => {
     finishRef.current = (messageId: string, finalText: string) => {
       if (!muted && finalText) speech.flush(messageId, finalText);
@@ -322,7 +344,7 @@ export function OrderSession({
     send(
       tagged(
         "touch",
-        "That's everything. Please read back my order and confirm it.",
+        "Confirm my order.",
       ),
     );
   }, [send]);
@@ -359,8 +381,13 @@ export function OrderSession({
   }, [sessionId, translateTo, speakTicket]);
 
   const startOver = useCallback(() => {
+    setMessages([]);
+    setTicket(null);
+    setKitchenError(null);
+    glossBuffer.clear();
+    speech.cancel();
     send(tagged("touch", "Cancel everything and start over."));
-  }, [send]);
+  }, [send, setMessages, glossBuffer, speech]);
 
   const busy = status === "submitted" || status === "streaming";
 
@@ -445,6 +472,8 @@ export function OrderSession({
       <div className="flex w-[20rem] shrink-0 flex-col xl:w-[24rem]">
         <CartPanel
           cart={cart}
+          confirmedOrder={confirmedOrder}
+          onNewOrder={startOver}
           onConfirm={confirmOrder}
           onClear={startOver}
           busy={busy}

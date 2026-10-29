@@ -1,7 +1,25 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { latestReply, replyToSpeak, tagged, toTurns } from '@/lib/interaction/transcript';
+import { latestConfirmedOrder, latestReply, replyToSpeak, tagged, toTurns } from '@/lib/interaction/transcript';
+
+describe('confirmed receipt', () => {
+  const confirmation = (id: string, orderNumber: number) => ({ id, role: 'assistant', parts: [
+    { type: 'tool-confirm_order', state: 'output-available', output: { confirmed: true, orderNumber, total: '$12.00', items: [] } },
+  ] });
+  it('keeps the latest confirmed tool result across later messages', () => {
+    assert.deepEqual(latestConfirmedOrder([confirmation('1', 101), confirmation('2', 102), assistant('3', 'Ready soon!')]),
+      { orderNumber: 102, total: '$12.00', items: [] });
+  });
+  it('ignores failed, incomplete, malformed and user supplied tool results', () => {
+    assert.equal(latestConfirmedOrder([
+      { ...confirmation('1', 101), role: 'user' },
+      { id: '2', role: 'assistant', parts: [null, { type: 'tool-confirm_order', state: 'input-available' },
+        { type: 'tool-confirm_order', state: 'output-available', output: { confirmed: false } }] },
+    ]), null);
+    assert.equal(latestConfirmedOrder([]), null);
+  });
+});
 
 /**
  * The transcript is the Deaf customer's entire view of the conversation, so a

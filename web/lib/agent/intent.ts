@@ -31,6 +31,7 @@ export type ResolvedItem = { item: MenuMatch; qty: number };
 export type Intent =
   | { kind: 'none' }
   | { kind: 'readback' }
+  | { kind: 'confirm' }
   | { kind: 'clear' }
   | { kind: 'add'; items: ResolvedItem[] }
   | { kind: 'choose'; query: string; qty: number; options: MenuMatch[]; totalMatches: number };
@@ -55,7 +56,6 @@ const READ_BACK = [
   'that is it',
   'my order',
   'my total',
-  'confirm my order',
   "i'm done",
   'im done',
 ];
@@ -127,6 +127,28 @@ function singular(phrase: string): string {
   return phrase.replace(/\b(\w{4,})s\b/g, '$1');
 }
 
+/** Prefer whole menu names; otherwise resolve consecutive food glosses. */
+async function foodQueries(phrase: string): Promise<{ phrase: string; matches: MenuMatch[] }[] | null> {
+  let matches = await searchMenu(phrase, 40);
+  if (matches.length === 0) matches = await searchMenu(singular(phrase), 40);
+  const words = phrase.split(/\s+/);
+  // A score of 45 can come from an alias occurring somewhere in the query,
+  // so it must not swallow another food name in the same phrase.
+  if (words.length === 1 || (matches[0]?.score ?? 0) >= 50) {
+    return resolveMenuQuery(matches).kind === 'none' ? null : [{ phrase, matches }];
+  }
+
+  for (let end = words.length - 1; end > 0; end--) {
+    const head = words.slice(0, end).join(' ');
+    let headMatches = await searchMenu(head, 40);
+    if (headMatches.length === 0) headMatches = await searchMenu(singular(head), 40);
+    if ((headMatches[0]?.score ?? 0) < (end === 1 ? 40 : 50)) continue;
+    const tail = await foodQueries(words.slice(end).join(' '));
+    if (tail) return [{ phrase: head, matches: headMatches }, ...tail];
+  }
+  return null;
+}
+
 export async function resolveIntent(rawText: string): Promise<Intent> {
   const text = rawText.trim();
   if (!text) return { kind: 'none' };
@@ -142,10 +164,15 @@ export async function resolveIntent(rawText: string): Promise<Intent> {
   */
   if (START_OVER.some((p) => lower.includes(p))) return { kind: 'clear' };
 
-  // After START_OVER, because "clear my order" contains "my order" and would
-  // otherwise be read back instead of cleared. Before NOT_A_PLAIN_ADD, because
-  // "confirm my order" contains "confirm" and the one answer that must come
-  // from the database would go to the model.
+  // Match the whole response: "yes, but remove fries" is not confirmation.
+  const affirmation = lower.replace(/’/g, "'").replace(/[.!]+$/, '').replace(/\s+/g, ' ').trim();
+  if ([
+    'yes', 'yeah', 'yep', 'correct', 'confirm', 'confirm order',
+    'confirm my order', 'that is correct', "that's correct", "that's right", 'place order',
+  ].includes(affirmation)) return { kind: 'confirm' };
+
+  // Handle explicit confirmation first; longer requests to read the order back
+  // still use the database rather than asking the model to recall the total.
   if (READ_BACK.some((p) => lower.includes(p))) return { kind: 'readback' };
 
   // Conversation, corrections and questions belong to the model.
@@ -160,7 +187,7 @@ export async function resolveIntent(rawText: string): Promise<Intent> {
   */
   const segments = lower
     .split(/\band\b|,|\+/)
-    .map((s) => s.replace(/\b(i|we|want|would|like|please|get|have|can|could|the|some)\b/g, ' '))
+    .map((s) => s.replace(/\b(i|we|want|would|like|please|get|have|can|could|the|some|money|sign|more)\b/g, ' '))
     .map((s) => s.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
@@ -175,26 +202,28 @@ export async function resolveIntent(rawText: string): Promise<Intent> {
     const phrase = raw.replace(/[.!?,;:]+$/, '').trim();
     if (!phrase) return { kind: 'none' };
 
-    let matches = await searchMenu(phrase, 40);
-    if (matches.length === 0) matches = await searchMenu(singular(phrase), 40);
+    const queries = await foodQueries(phrase);
+    if (!queries) return { kind: 'none' };
 
-    const resolved = resolveMenuQuery(matches);
+    for (const { phrase, matches } of queries) {
+      const resolved = resolveMenuQuery(matches);
 
-    // Nothing recognisable: let the model explain, and offer alternatives.
-    if (resolved.kind === 'none') return { kind: 'none' };
+      // Nothing recognisable: let the model explain, and offer alternatives.
+      if (resolved.kind === 'none') return { kind: 'none' };
 
-    // One question at a time -- settle this before looking at the rest.
-    if (resolved.kind === 'many') {
-      return {
-        kind: 'choose',
-        query: phrase,
-        qty,
-        options: resolved.options,
-        totalMatches: resolved.totalMatches,
-      };
+      // One question at a time -- settle this before looking at the rest.
+      if (resolved.kind === 'many') {
+        return {
+          kind: 'choose',
+          query: phrase,
+          qty,
+          options: resolved.options,
+          totalMatches: resolved.totalMatches,
+        };
+      }
+
+      adds.push({ item: resolved.item, qty });
     }
-
-    adds.push({ item: resolved.item, qty });
   }
 
   return adds.length > 0 ? { kind: 'add', items: adds } : { kind: 'none' };

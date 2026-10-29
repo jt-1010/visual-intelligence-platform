@@ -72,6 +72,15 @@ export function useGlossBuffer(onPhrase: (glosses: string[]) => void) {
     (label: string) => {
       const now = Date.now();
       const buffer = bufferRef.current;
+      const previous = buffer[buffer.length - 1]?.toLowerCase();
+      const next = label.toLowerCase();
+      // Relaxing a NO handshape can look like YES (and vice versa). Ignore
+      // the trailing flip without delaying the original phrase's timer.
+      if (
+        (previous === 'no' && next === 'yes') ||
+        (previous === 'yes' && next === 'no')
+      ) return;
+
       const stillHolding =
         buffer.length > 0 &&
         buffer[buffer.length - 1] === label &&

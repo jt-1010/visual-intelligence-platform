@@ -469,6 +469,45 @@ describe('disambiguation', () => {
 });
 
 describe('deterministic intent', () => {
+  it('recognises affirmative confirmations without a model', async () => {
+    for (const text of ['yes', 'YES!', 'yeah', 'yep', 'correct', 'confirm', 'confirm order',
+      'Confirm my order.', 'that is correct', "that's correct", "that's right", 'that’s right', 'place order']) {
+      assert.deepEqual(await resolveIntent(text), { kind: 'confirm' }, text);
+    }
+  });
+
+  it('does not confirm qualified, negative, or questioning responses', async () => {
+    for (const text of ['yes but remove the fries', 'do not confirm', 'is that correct?', 'yes?', 'no thanks']) {
+      assert.equal((await resolveIntent(text)).kind, 'none', text);
+    }
+  });
+  it('ignores filler glosses around food names', async () => {
+    for (const food of ['sandwich', 'hamburger', fixtures.burger.name]) {
+      assert.deepEqual(
+        await resolveIntent(`MONEY sign WANT more ${food} PLEASE`),
+        await resolveIntent(food),
+      );
+    }
+    assert.equal((await resolveIntent('money sign want more please')).kind, 'none');
+  });
+
+  it('resolves adjacent food names individually', async () => {
+    const intent = await resolveIntent(`money ${fixtures.burger.name} ${fixtures.dessert.name}`);
+    assert.equal(intent.kind, 'add');
+    if (intent.kind !== 'add') return;
+    assert.deepEqual(intent.items.map(({ item }) => item.slug), [
+      fixtures.burger.slug, fixtures.dessert.slug,
+    ]);
+    assert.deepEqual(intent.items.map(({ qty }) => qty), [1, 1]);
+  });
+
+  it('asks about an ambiguous food in an adjacent gloss sequence', async () => {
+    assert.deepEqual(
+      await resolveIntent('money sandwich hamburger'),
+      await resolveIntent('sandwich'),
+    );
+  });
+
   /**
    * The ordinary ordering path must not depend on the model. A local 7B was
    * measured answering "two burgers" with "Added two Burgers, $9.98" while
@@ -522,7 +561,6 @@ describe('deterministic intent', () => {
       'what do you have',
       'how much is that',
       'actually make that one burger',
-      'yes',
       'no thanks',
       '',
     ]) {
@@ -593,7 +631,6 @@ describe('reading the order back', () => {
       "That's everything. Please read back my order and confirm it.",
       'read back my order',
       "that's all",
-      'confirm my order',
     ]) {
       assert.equal((await resolveIntent(text)).kind, 'readback', text);
     }

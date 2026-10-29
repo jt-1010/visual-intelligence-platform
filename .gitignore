@@ -34,6 +34,8 @@ build/
 dist/
 *.tsbuildinfo
 .vercel
+test-results/
+playwright-report/
 
 # --- Python ---
 __pycache__/

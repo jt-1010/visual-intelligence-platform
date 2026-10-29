@@ -60,23 +60,36 @@ def test_moving_hands_produce_candidates():
     assert got[0]["motion"] > spec()["segmentation"]["motion_gate_threshold"]
 
 
-def test_a_held_sign_is_emitted_exactly_once():
-    """One sign spans many windows; it must be emitted once, not once per window.
-
-    This assertion used to read `accepted <= (120 // debounce) + 1`, which
-    allowed six. It passed while the demo was producing
-    "want want want want want", because emitting reset the very counter the
-    debounce compared against, making it a rate limit rather than a latch.
-    The sign is held for the whole run here, so the only correct answer is one.
-    """
+def test_same_sign_can_repeat_without_rest_after_cooldown():
+    """Tracking jitter must not latch a label forever, even with moving wrists."""
     seg = SignSegmenter()
-    accepted = 0
-    for t in range(120):
+    emitted_at = []
+    for t in range(180):
         if seg.push(make_frame(t, moving=True)) is not None:
             if seg.accept("BURGER", 0.95):
-                accepted += 1
+                emitted_at.append(t)
 
-    assert accepted == 1, f"emitted {accepted} times"
+    assert len(emitted_at) >= 2, "the same sign must recover without resting hands"
+    assert all(
+        later - earlier > seg.debounce_frames * 2
+        for earlier, later in zip(emitted_at, emitted_at[1:])
+    ), "overlapping windows must stay suppressed during the cooldown"
+
+
+def test_cooldown_expires_only_after_twice_debounce_frames():
+    seg = SignSegmenter()
+    for _ in range(seg.stability_windows):
+        seg.accept("BURGER", 0.95)
+    assert seg.last_label == "BURGER"
+
+    for t in range(seg.debounce_frames * 2):
+        seg.push(make_frame(t, moving=True))
+        assert seg.last_label == "BURGER"
+        assert not seg.accept("BURGER", 0.95)
+
+    seg.push(make_frame(seg.debounce_frames * 2, moving=True))
+    assert seg.last_label is None
+    assert seg.accept("BURGER", 0.95)
 
 
 def test_a_different_sign_is_emitted_immediately():
@@ -160,3 +173,42 @@ def test_returning_to_rest_clears_the_debounce():
 
     assert first >= 1
     assert second >= 1, "a rest between two identical signs must reset the debounce"
+
+
+def test_low_confidence_breaks_candidate_stability():
+    seg = SignSegmenter()
+    for _ in range(seg.stability_windows - 1):
+        assert not seg.accept("BURGER", 0.95)
+    assert not seg.accept("BURGER", seg.confidence_threshold - 0.01)
+    for _ in range(seg.stability_windows - 1):
+        assert not seg.accept("BURGER", 0.95)
+    assert seg.accept("BURGER", 0.95)
+
+
+def test_single_window_stability_setting():
+    seg = SignSegmenter()
+    seg.stability_windows = 1
+    assert seg.accept("BURGER", 0.95)
+    assert not seg.accept("BURGER", 0.95)
+
+
+def test_reset_clears_all_state_and_allows_same_sign():
+    seg = SignSegmenter()
+    for t in range(40):
+        if seg.push(make_frame(t, moving=True)) is not None:
+            seg.accept("BURGER", 0.95)
+    assert seg.last_label == "BURGER"
+    seg.quiet_windows = 1
+
+    seg.reset()
+
+    assert not seg.buffer
+    assert seg.frames_seen == 0
+    assert seg.frames_since_emit == 10**9
+    assert seg.last_label is None
+    assert seg.candidate is None
+    assert seg.candidate_windows == 0
+    assert seg.quiet_windows == 0
+    for _ in range(seg.stability_windows - 1):
+        assert not seg.accept("BURGER", 0.95)
+    assert seg.accept("BURGER", 0.95)

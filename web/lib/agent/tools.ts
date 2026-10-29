@@ -210,6 +210,7 @@ export function buildTools(sessionId: string): ToolSet {
               confirmed: true,
               orderNumber: result.orderId,
               total: formatMoney(result.cart.totalCents),
+                items: result.cart.lines,
             }
           : { confirmed: false, message: 'The order is empty - nothing to confirm.' };
       },

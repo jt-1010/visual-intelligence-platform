@@ -175,6 +175,7 @@ export class LandmarkEngine {
     const shoulderWidth =
       ls && rs ? Math.hypot(ls.x - rs.x, ls.y - rs.y) : null;
 
+    const handsVisible = (left ? 1 : 0) + (right ? 1 : 0);
     const bodyDetected = Boolean(poseLm);
 
     // Record every raw detected -> lost transition, so the UI can show how
@@ -184,14 +185,14 @@ export class LandmarkEngine {
     this.lastDetected = bodyDetected;
     while (this.dropouts.length && now - this.dropouts[0] > 30_000) this.dropouts.shift();
 
-    const presence = this.presence.update(shoulderWidth);
+    const presence = this.presence.update(shoulderWidth, now, handsVisible, bodyDetected);
 
     return {
       lm,
       presence,
       arrived: this.presence.takeArrival(),
       departed: this.presence.takeDeparture(),
-      handsVisible: (left ? 1 : 0) + (right ? 1 : 0),
+      handsVisible,
       shoulderWidth,
       bodyDetected,
       rawDropouts: this.dropouts.length,

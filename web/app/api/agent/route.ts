@@ -12,7 +12,7 @@ import { activeBackend, getModel } from '@/lib/agent/model';
 import { SYSTEM_PROMPT } from '@/lib/agent/prompt';
 import { buildTools } from '@/lib/agent/tools';
 import { resolveIntent } from '@/lib/agent/intent';
-import { addToCart, clearCart, formatMoney, getCart } from '@/lib/agent/cart';
+import { addToCart, clearCart, confirmOrder, formatMoney, getCart } from '@/lib/agent/cart';
 
 export const maxDuration = 30;
 
@@ -102,6 +102,21 @@ async function respondDeterministically(
       if (intent.kind === 'clear') {
         await clearCart(sessionId);
         say(writer, 'Cleared. What would you like?');
+      } else if (intent.kind === 'confirm') {
+        const cart = await getCart(sessionId);
+        if (cart.lines.length > 0) {
+          const confirmed = await confirmOrder(sessionId);
+          const callId = `local-confirm-${confirmed.orderId ?? 101}`;
+          writer.write({ type: 'tool-input-available', toolCallId: callId, toolName: 'confirm_order', input: {} });
+          writer.write({
+            type: 'tool-output-available', toolCallId: callId,
+            output: { confirmed: true, orderNumber: confirmed.orderId ?? 101,
+              total: formatMoney(confirmed.cart.totalCents), items: confirmed.cart.lines },
+          });
+          say(writer, `Thanks for ordering! Your order #${confirmed.orderId ?? 101} is confirmed. It will be right up!`);
+        } else {
+          say(writer, "Your order is empty. Tell me what you'd like to order first!");
+        }
       } else if (intent.kind === 'readback') {
         const cart = await getCart(sessionId);
         if (cart.lines.length === 0) {
